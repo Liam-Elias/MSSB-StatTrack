@@ -1,6 +1,6 @@
 using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools
 
-const Stat_path = "C:/Users/elias/AppData/Roaming/Project Rio/StatFiles/MarioSuperstarBaseball/"
+const Stat_path = "/Users/joshfenwick/Desktop/MSSB_stat_tracker/MSSB-StatTrack"
 
 function get_json(P1::AbstractString; P2::AbstractString = nothing)
 
@@ -51,19 +51,32 @@ function JSON_to_dict(stat_file::AbstractString)
     return json_dict
 end
 
-function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString)
+function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Partner_ID::AbstractString="All")
 
     #JSON file for game in form of dictionary
-    json_dict = JSON_to_dict(stat_file)
+    json_dict = JSON3.parsefile(stat_file)
+    Home_Player = json_dict["Home Player"]
+    Away_Player = json_dict["Away Player"]
 
-    if isequal_normalized(json_dict["Home Player"],RIO_ID,casefold=true)
-        get_game_stats(json_dict,"Home")
-    elseif isequal_normalized(json_dict["Away Player"],RIO_ID,casefold=true)
-        get_game_stats(json_dict,"Away")
+    if Partner_ID == "All"
+        if isequal_normalized(Home_Player,RIO_ID,casefold=true)
+            get_game_stats(json_dict,"Home")
+        elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
+            get_game_stats(json_dict,"Away")
+        else
+            error("$RIO_ID did not participate in this match")
+        end
     else
-        error("Given Player did not participate in this match")
+        if isequal_normalized(Home_Player,RIO_ID,casefold=true) && isequal_normalized(Away_Player,Partner_ID,casefold=true)
+            get_game_stats(json_dict,"Home")
+        elseif isequal_normalized(Home_Player,Partner_ID,casefold=true) && isequal_normalized(Away_Player,RIO_ID,casefold=true)
+            get_game_stats(json_dict,"Away")
+        elseif !isequal_normalized(Home_Player,Partner_ID,casefold=true) && !isequal_normalized(Away_Player,Partner_ID,casefold=true)
+            error("$Partner_ID did not participate in this match")
+        else
+            error("$RIO_ID did not participate in this match")
+        end
     end
-
 end
 
 function get_game_stats(json_dict::AbstractDict,team::AbstractString)
@@ -78,10 +91,6 @@ function get_game_stats(json_dict::AbstractDict,team::AbstractString)
         Stats_dict[ID] = Dict{AbstractString,Any}() #Create a Key player using ID
 
         Stats_dict[ID]["SuperS"] = json_dict["Character Game Stats"]["$team Roster $i"]["Superstar"] #Check if Superstar was enabled on Char
-
-        Stats_dict[ID]["F-hand"] = json_dict["Character Game Stats"]["$team Roster $i"]["Fielding Hand"]
-
-        Stats_dict[ID]["B-hand"] = json_dict["Character Game Stats"]["$team Roster $i"]["Batting Hand"]
 
         O_stats = json_dict["Character Game Stats"]["$team Roster $i"]["Offensive Stats"] #Offensive Stats dict
 
@@ -217,5 +226,4 @@ function get_game_stats(json_dict::AbstractDict,team::AbstractString)
     return Stats_dict
 end
 
-@btime single_game_stats("JSON_files/TubbaBlubba-Gobster9/decoded.20260618T220153_Gobster9-Vs-TubbaBlubba_2630012857.json","tubbablubba")
-
+single_game_stats("JSON_games/decoded.20260606T160020_Gobster9-Vs-CPU_27921781.json","Gobster9")
