@@ -64,7 +64,7 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
         elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
         else
-            error("$RIO_ID did not participate in this match")
+            return 0
         end
     else
         if isequal_normalized(Home_Player,RIO_ID,casefold=true) && isequal_normalized(Away_Player,Partner_ID,casefold=true)
@@ -72,7 +72,7 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
         elseif isequal_normalized(Home_Player,Partner_ID,casefold=true) && isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
         elseif !isequal_normalized(Home_Player,Partner_ID,casefold=true) && !isequal_normalized(Away_Player,Partner_ID,casefold=true)
-            error("$Partner_ID did not participate in this match")
+            return 0
         else
             error("$RIO_ID did not participate in this match")
         end
@@ -81,7 +81,15 @@ end
 
 function get_game_stats(json_dict::AbstractDict,team::AbstractString)
 
-    #New dictionary which holds calculated states for each player
+    #Game_stats = Dict{AbstractString,Any}()
+    Off_dict = get_offensive_stats(json_dict,team)
+
+    #return Off_dict
+end
+
+    
+function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
+
     Stats_dict = Dict{AbstractString,Dict{AbstractString,Any}}()
 
     #Iterate over each $team Player
@@ -126,7 +134,7 @@ function get_game_stats(json_dict::AbstractDict,team::AbstractString)
 
             Stats_dict[ID]["OBP"] = round((O_stats["Hits"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"])/(O_stats["At Bats"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"]+Stats_dict[ID]["SF"]),digits=3)
 
-        elseif O_stats["At Bats"] == 0 && ( O_stats["Walks (4 Balls)"] != 0 || O_stats["Walks (Hit)"] != 0 || O_stats["Sac Flys"])
+        elseif O_stats["At Bats"] == 0 && ( O_stats["Walks (4 Balls)"] != 0 || O_stats["Walks (Hit)"] != 0 || O_stats["Sac Flys"] != 0)
         
             Stats_dict[ID]["BA"] = 0
 
@@ -217,13 +225,55 @@ function get_game_stats(json_dict::AbstractDict,team::AbstractString)
         end
 
         Stats_dict[ID]["R"] = RS
-
-
-
-
-        
+             
     end
     return Stats_dict
 end
 
-single_game_stats("JSON_games/decoded.20260606T160020_Gobster9-Vs-CPU_27921781.json","Gobster9")
+function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::AbstractString="All")
+
+    Full_stats = Dict{AbstractString,Dict{AbstractString,Dict{Int,Dict{AbstractString,Any}}}}()
+
+    #Iteratre through all files in source dir
+    for game in readdir(Path)
+        if contains(game, "decoded")
+            src_path = joinpath(Path,game)
+
+            game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)
+            if game_stats == 0
+                continue
+            else  
+                for char in keys(game_stats)
+                    SuperS = pop!(game_stats[char], "SuperS")
+                    delete!(game_stats[char], "BA")
+                    delete!(game_stats[char], "OBP")
+                    delete!(game_stats[char], "SLG")
+                    delete!(game_stats[char], "OPS")
+                    if !haskey(Full_stats,char)
+                        Full_stats[char] = Dict{AbstractString,Dict{Int,Dict{AbstractString,Any}}}()
+                        Full_stats[char]["Offensive Stats"] = Dict{Int,Dict{AbstractString,Any}}()
+                        Full_stats[char]["Offensive Stats"][SuperS] = game_stats[char] 
+                    elseif !haskey(Full_stats[char]["Offensive Stats"],SuperS)
+                        Full_stats[char]["Offensive Stats"][SuperS] = game_stats[char]
+                    else
+                        for key in keys(Full_stats[char]["Offensive Stats"][SuperS])
+                            Full_stats[char]["Offensive Stats"][SuperS][key] += game_stats[char][key]
+                        end
+                    end
+                end
+            end
+        else
+            continue
+        end
+    end
+    return Full_stats
+end
+
+
+
+
+#display(single_game_stats("JSON_games/20250930T140601_CPU-Vs-Gobster9_3069868142.json","Gobster9"))
+
+#names = ["Mario","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+
+get_all_games("JSON_games","Gobster9")
