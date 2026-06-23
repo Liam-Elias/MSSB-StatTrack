@@ -266,11 +266,39 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::A
             continue
         end
     end
+    for char in keys(Full_stats)
+        for key in keys(Full_stats[char]["Offensive Stats"])
+            stats = Full_stats[char]["Offensive Stats"][key]
+            if stats["AB"] != 0
+
+                Full_stats[char]["Offensive Stats"][key]["BA"] = round(stats["H"]/stats["AB"],digits=3)
+
+                Full_stats[char]["Offensive Stats"][key]["SLG"] = round((stats["H"] + stats["2B"] + 2*stats["3B"] + 3*stats["HR"])/(stats["AB"]),digits=3)
+
+                Full_stats[char]["Offensive Stats"][key]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+
+            elseif stats["AB"] == 0 && ( stats["BB"] != 0 || stats["HBP"] != 0 || stats["SF"] != 0)
+            
+                Full_stats[char]["Offensive Stats"][key]["BA"] = 0
+
+                 Full_stats[char]["Offensive Stats"][key]["SLG"] = 0
+
+                 Full_stats[char]["Offensive Stats"][key]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+
+            else
+
+                 Full_stats[char]["Offensive Stats"][key]["BA"] = 0
+
+                 Full_stats[char]["Offensive Stats"][key]["SLG"] = 0
+
+                 Full_stats[char]["Offensive Stats"][key]["OBP"] = 0
+
+            end
+            Full_stats[char]["Offensive Stats"][key]["OPS"] = round(stats["SLG"] + stats["OBP"],digits=3)
+        end
+    end
     return Full_stats
 end
-
-
-
 
 #display(single_game_stats("JSON_games/20250930T140601_CPU-Vs-Gobster9_3069868142.json","Gobster9"))
 
