@@ -1,6 +1,4 @@
-using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools
-
-const Stat_path = "C:/Users/elias/AppData/Roaming/Project Rio/StatFiles/MarioSuperstarBaseball"
+using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools,NativeFileDialog
 
 const names = ["Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
@@ -23,7 +21,14 @@ function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing
             mkpath("./JSON_files/"*sub_dir)
     end
     
+    Stat_path = pick_folder() #allow user to select Rio Stat Files Path
 
+    if isempty(Stat_path)
+        println("Operation cancelled by the user") # prints if no dir is selected
+        return
+    else
+        println("Selected directory: ", Stat_path)
+    end
     #Iteratre through all files in source dir
     for file in readdir(Stat_path)
         src_path = joinpath(Stat_path,file)
