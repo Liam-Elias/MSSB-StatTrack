@@ -2,6 +2,10 @@ using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools
 
 const Stat_path = "/Users/joshfenwick/Desktop/MSSB_stat_tracker/MSSB-StatTrack"
 
+const names = ["Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+
+const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R"]
+
 function get_json(P1::AbstractString; P2::AbstractString = nothing)
 
     #Check for existing JSON file folder and creates one if needed
@@ -81,10 +85,16 @@ end
 
 function get_game_stats(json_dict::AbstractDict,team::AbstractString)
 
-    #Game_stats = Dict{AbstractString,Any}()
+    Game_stats = Dict{AbstractString,Dict{AbstractString,Dict{AbstractString,Any}}}()
     Off_dict = get_offensive_stats(json_dict,team)
+    #Def_dict = get_defensive_stats(json_dict,team)
+    for char in keys(Off_dict)
+        Game_stats[char] = Dict{AbstractString,Dict{AbstractString,Any}}()
+        Game_stats[char]["O_Stats"] = Off_dict[char]
+        #Game_stats[char]["Defensive Stats"] = Def_dict[char]
+    end
 
-    #return Off_dict
+    return Game_stats
 end
 
     
@@ -232,69 +242,71 @@ end
 
 function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::AbstractString="All")
 
-    Full_stats = Dict{AbstractString,Dict{AbstractString,Dict{Int,Dict{AbstractString,Any}}}}()
-
-    #Iteratre through all files in source dir
+    #Makes a empth dict for all characters and all stats to be filled in later
+    #File goes, character name -> superstar state -> Offensive vs Defensive -> stat name -> stat value
+    Full_stats = Dict{AbstractString,Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}}()
+    for char in names
+        Full_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+        Full_stats[char][0] = Dict{AbstractString,Dict{AbstractString,Any}}()
+        Full_stats[char][1] = Dict{AbstractString,Dict{AbstractString,Any}}()
+        Full_stats[char][0]["O_Stats"] = Dict{AbstractString,Any}()
+        Full_stats[char][1]["O_Stats"] = Dict{AbstractString,Any}()
+        for stat in O_stats_name
+            Full_stats[char][0]["O_Stats"][stat] = 0
+            Full_stats[char][1]["O_Stats"][stat] = 0
+        end
+    end
+    #Iteratre through all games with given RIO_ID or Partner_ID and add stats to Full_stats dict
     for game in readdir(Path)
         if contains(game, "decoded")
             src_path = joinpath(Path,game)
 
             game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)
+            #Skips game if RIO_ID did not participate in the game or if Partner_ID was specified and did not participate in the game
             if game_stats == 0
                 continue
             else  
+                #Appends stats from game_stats to Full_stats
                 for char in keys(game_stats)
-                    SuperS = pop!(game_stats[char], "SuperS")
-                    delete!(game_stats[char], "BA")
-                    delete!(game_stats[char], "OBP")
-                    delete!(game_stats[char], "SLG")
-                    delete!(game_stats[char], "OPS")
-                    if !haskey(Full_stats,char)
-                        Full_stats[char] = Dict{AbstractString,Dict{Int,Dict{AbstractString,Any}}}()
-                        Full_stats[char]["Offensive Stats"] = Dict{Int,Dict{AbstractString,Any}}()
-                        Full_stats[char]["Offensive Stats"][SuperS] = game_stats[char] 
-                    elseif !haskey(Full_stats[char]["Offensive Stats"],SuperS)
-                        Full_stats[char]["Offensive Stats"][SuperS] = game_stats[char]
-                    else
-                        for key in keys(Full_stats[char]["Offensive Stats"][SuperS])
-                            Full_stats[char]["Offensive Stats"][SuperS][key] += game_stats[char][key]
-                        end
+                    SuperS = pop!(game_stats[char]["O_Stats"], "SuperS")
+                    for stat in O_stats_name
+                        Full_stats[char][SuperS]["O_Stats"][stat] += game_stats[char]["O_Stats"][stat]
                     end
                 end
             end
-        else
-            continue
         end
     end
+    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
     for char in keys(Full_stats)
-        for key in keys(Full_stats[char]["Offensive Stats"])
-            stats = Full_stats[char]["Offensive Stats"][key]
+        for key in keys(Full_stats[char])
+            stats = Full_stats[char][key]["O_Stats"]
+            #Skips if no AB to avoid division by zero, but still calculates OBP if there are BB, HBP, or SF
             if stats["AB"] != 0
 
-                Full_stats[char]["Offensive Stats"][key]["BA"] = round(stats["H"]/stats["AB"],digits=3)
+                Full_stats[char][key]["O_Stats"]["BA"] = round(stats["H"]/stats["AB"],digits=3)
 
-                Full_stats[char]["Offensive Stats"][key]["SLG"] = round((stats["H"] + stats["2B"] + 2*stats["3B"] + 3*stats["HR"])/(stats["AB"]),digits=3)
+                Full_stats[char][key]["O_Stats"]["SLG"] = round((stats["H"] + stats["2B"] + 2*stats["3B"] + 3*stats["HR"])/(stats["AB"]),digits=3)
 
-                Full_stats[char]["Offensive Stats"][key]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+                Full_stats[char][key]["O_Stats"]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
 
             elseif stats["AB"] == 0 && ( stats["BB"] != 0 || stats["HBP"] != 0 || stats["SF"] != 0)
             
-                Full_stats[char]["Offensive Stats"][key]["BA"] = 0
+                Full_stats[char][key]["O_Stats"]["BA"] = 0
 
-                 Full_stats[char]["Offensive Stats"][key]["SLG"] = 0
+                 Full_stats[char][key]["O_Stats"]["SLG"] = 0
 
-                 Full_stats[char]["Offensive Stats"][key]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+                 Full_stats[char][key]["O_Stats"]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
 
             else
 
-                 Full_stats[char]["Offensive Stats"][key]["BA"] = 0
+                 Full_stats[char][key]["O_Stats"]["BA"] = 0
 
-                 Full_stats[char]["Offensive Stats"][key]["SLG"] = 0
+                 Full_stats[char][key]["O_Stats"]["SLG"] = 0
 
-                 Full_stats[char]["Offensive Stats"][key]["OBP"] = 0
+                 Full_stats[char][key]["O_Stats"]["OBP"] = 0
 
             end
-            Full_stats[char]["Offensive Stats"][key]["OPS"] = round(stats["SLG"] + stats["OBP"],digits=3)
+            Full_stats[char][key]["O_Stats"]["OPS"] = round(stats["SLG"] + stats["OBP"],digits=3)
         end
     end
     return Full_stats
@@ -302,6 +314,5 @@ end
 
 #display(single_game_stats("JSON_games/20250930T140601_CPU-Vs-Gobster9_3069868142.json","Gobster9"))
 
-#names = ["Mario","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
 get_all_games("JSON_games","Gobster9")
