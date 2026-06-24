@@ -61,14 +61,13 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
     json_dict = JSON3.parsefile(stat_file)
     Home_Player = json_dict["Home Player"]
     Away_Player = json_dict["Away Player"]
-
     if Partner_ID == "All"
         if isequal_normalized(Home_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Home")
         elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
         else
-            return 0
+            return 0,0
         end
     else
         if isequal_normalized(Home_Player,RIO_ID,casefold=true) && isequal_normalized(Away_Player,Partner_ID,casefold=true)
@@ -76,7 +75,7 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
         elseif isequal_normalized(Home_Player,Partner_ID,casefold=true) && isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
         elseif !isequal_normalized(Home_Player,Partner_ID,casefold=true) && !isequal_normalized(Away_Player,Partner_ID,casefold=true)
-            return 0
+            return 0,0
         else
             error("$RIO_ID did not participate in this match")
         end
@@ -84,17 +83,29 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
 end
 
 function get_game_stats(json_dict::AbstractDict,team::AbstractString)
-
+    #Gets all stats for a single game separated by defensive stats and offensive stats for a given game, returns a dict with all characters and their stats
     Game_stats = Dict{AbstractString,Dict{AbstractString,Dict{AbstractString,Any}}}()
     Off_dict = get_offensive_stats(json_dict,team)
-    #Def_dict = get_defensive_stats(json_dict,team)
+    Def_dict = get_defensive_stats(json_dict,team)
     for char in keys(Off_dict)
         Game_stats[char] = Dict{AbstractString,Dict{AbstractString,Any}}()
         Game_stats[char]["O_Stats"] = Off_dict[char]
-        #Game_stats[char]["Defensive Stats"] = Def_dict[char]
+        Game_stats[char]["D_Stats"] = Def_dict[char]
     end
-
-    return Game_stats
+        if team == "Home"
+            if json_dict["Home Score"] > json_dict["Away Score"]
+                win = 1
+            else
+                win = 0
+            end
+        else
+            if json_dict["Away Score"] > json_dict["Home Score"]
+                win = 1
+            else
+                win = 0
+            end
+        end
+    return Game_stats,win
 end
 
     
@@ -240,6 +251,105 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
     return Stats_dict
 end
 
+function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
+
+    Stats_dict = Dict{AbstractString,Dict{AbstractString,Any}}()
+
+    #Iterate over each $team Player
+    for i in 0:8
+        ID = json_dict["Character Game Stats"]["$team Roster $i"]["CharID"] #Char name
+
+        Stats_dict[ID] = Dict{AbstractString,Any}() #Create a Key player using ID
+
+        #Stats_dict[ID]["SuperS"] = json_dict["Character Game Stats"]["$team Roster $i"]["Superstar"] #Check if Superstar was enabled on Char, we storre this along side the poition as it applies to all stats for that player in the game.
+
+        D_stats = json_dict["Character Game Stats"]["$team Roster $i"]["Defensive Stats"] #Defensive Stats dict
+        
+        #We also store Big plays along side positions as it can only be know as a summed total of all positions
+        Stats_dict[ID]["BigPlays"] = D_stats["Big Plays"]
+
+        #Gets keys relted to the positions this character played in the game
+        for key in keys(D_stats["Batters Per Position"][1])
+
+            #We convert the key to a string as it is stored as an symbol in the JSON file, but we want to store it as a string in our dict for easier access later
+            dkey = string(key)
+
+            Stats_dict[ID][dkey] = Dict{AbstractString,Any}()
+
+            #If the character played as a pitcher, get all pitching stats
+            if dkey == "P"
+                Stats_dict[ID][dkey]["ER"] = D_stats["Earned Runs"]
+                Stats_dict[ID][dkey]["R"] = D_stats["Runs Allowed"]
+                Stats_dict[ID][dkey]["BF"] = D_stats["Batters Faced"]
+                Stats_dict[ID][dkey]["SO"] = D_stats["Strikeouts"]
+                Stats_dict[ID][dkey]["BB"] = D_stats["Batters Walked"]
+                Stats_dict[ID][dkey]["HBP"] = D_stats["Batters Hit"]
+                Stats_dict[ID][dkey]["OutsPP"] = D_stats["Outs Pitched"]
+                Stats_dict[ID][dkey]["H"] = D_stats["Hits Allowed"]
+                Stats_dict[ID][dkey]["HR"] = D_stats["HRs Allowed"]
+                Stats_dict[ID][dkey]["PC"] = D_stats["Pitches Thrown"]
+                Stats_dict[ID][dkey]["SPC"] = D_stats["Star Pitches Thrown"]
+                Stats_dict[ID][dkey]["GP"] = 1
+                #Checks if and how many out the player got as a pitcher through direct put outs
+                if haskey(D_stats["Outs Per Position"][1],"P")
+                    Stats_dict[ID][dkey]["PO"] = D_statsD_stats["Outs Per Position"][1]["P"]
+                else
+                    Stats_dict[ID][dkey]["PO"] = 0
+                end
+                #Checks if the pitcher was the Starting Pitcher and if so gives a game start stat
+                if team == "Home"
+                    if json_dict["Events"][1]["Pitch"]["Pitcher Char Id"] == ID
+                        Stats_dict[ID][dkey]["GS"] = 1
+                    else
+                        Stats_dict[ID][dkey]["GS"] = 0
+                    end
+                else
+                    for event in keys(json_dict["Events"])
+                        if json_dict["Events"][event]["Half Inning"] == 1
+                            if json_dict["Events"][event]["Pitch"]["Pitcher Char Id"] == ID
+                                Stats_dict[ID][dkey]["GS"] = 1
+                                break
+                            else
+                                Stats_dict[ID][dkey]["GS"] = 0
+                                break
+                            end
+                        end
+                    end
+                end
+                #calulates Innings Pitched stat in decimal form, where 1 out = .1 and 2 outs = .2
+                Stats_dict[ID][dkey]["IP"] = div(D_stats["Outs Pitched"],3) + (D_stats["Outs Pitched"]%3)/10
+                #Calculates WHIP, ERA, K/9, FIP, DICE, IP stats
+                if Stats_dict[ID][dkey]["IP"] != 0
+                    Stats_dict[ID][dkey]["WHIP"] = round((Stats_dict[ID][dkey]["BB"] + Stats_dict[ID][dkey]["H"])/Stats_dict[ID][dkey]["IP"],digits=3)
+                    Stats_dict[ID][dkey]["ERA"] = round((Stats_dict[ID][dkey]["ER"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
+                    Stats_dict[ID][dkey]["K/9"] = round((Stats_dict[ID][dkey]["SO"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
+                    Stats_dict[ID][dkey]["FIP"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*Stats_dict[ID][dkey]["BB"] - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3.1,digits=3)
+                    Stats_dict[ID][dkey]["DICE"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*(Stats_dict[ID][dkey]["BB"]+Stats_dict[ID][dkey]["HBP"]) - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3,digits=3)
+                else
+                    Stats_dict[ID][dkey]["WHIP"] = 0
+                    Stats_dict[ID][dkey]["ERA"] = 0
+                    Stats_dict[ID][dkey]["K/9"] = 0
+                    Stats_dict[ID][dkey]["FIP"] = 0
+                    Stats_dict[ID][dkey]["DICE"] = 0
+                end
+            else
+                #Gets the stats for any other postion 
+                if D_stats["Outs Per Position"] == []
+                    Stats_dict[ID][dkey]["PO"] = 0
+                else
+                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1][dkey]
+                end
+                Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
+                Stats_dict[ID][dkey]["BF"] = D_stats["Batters Per Position"][1][dkey]
+                Stats_dict[ID][dkey]["GP"] = 1
+                #Calulates Innings played stat in decimal form, where 1 out = .1 and 2 outs = .2
+                Stats_dict[ID][dkey]["INN"] = div(Stats_dict[ID][dkey]["OutsPP"],3) + (Stats_dict[ID][dkey]["OutsPP"]%3)/10
+            end
+        end
+    end
+    return Stats_dict
+end
+
 function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::AbstractString="All")
 
     #Makes a empth dict for all characters and all stats to be filled in later
@@ -256,16 +366,22 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::A
             Full_stats[char][1]["O_Stats"][stat] = 0
         end
     end
+
+    wins = 0
+    games = 0
     #Iteratre through all games with given RIO_ID or Partner_ID and add stats to Full_stats dict
     for game in readdir(Path)
-        if contains(game, "decoded")
+        if contains(game, "decoded") && contains(game, ".json")
             src_path = joinpath(Path,game)
-
-            game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)
+            game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)[1]
+            if single_game_stats(src_path,RIO_ID,Partner_ID)[2] == 1
+                wins += 1
+            end
             #Skips game if RIO_ID did not participate in the game or if Partner_ID was specified and did not participate in the game
             if game_stats == 0
                 continue
-            else  
+            else 
+                games += 1 
                 #Appends stats from game_stats to Full_stats
                 for char in keys(game_stats)
                     SuperS = pop!(game_stats[char]["O_Stats"], "SuperS")
@@ -312,7 +428,7 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::A
     return Full_stats
 end
 
-#display(single_game_stats("JSON_games/20250930T140601_CPU-Vs-Gobster9_3069868142.json","Gobster9"))
 
+single_game_stats("JSON_games/decoded.20260620T223211_Gobster9-Vs-TubbaBlubba_3669907432.json","Gobster9")
 
-get_all_games("JSON_games","Gobster9")
+#get_all_games("JSON_games","Gobster9")
