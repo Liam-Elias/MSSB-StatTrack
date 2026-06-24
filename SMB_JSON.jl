@@ -43,10 +43,6 @@ function get_json(P1::AbstractString; P2::AbstractString = nothing)
 end
 
 
-
-
-
-
 function JSON_to_dict(stat_file::AbstractString)
 
     #JSON file for game in form of dictionary
@@ -291,8 +287,10 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
                 Stats_dict[ID][dkey]["SPC"] = D_stats["Star Pitches Thrown"]
                 Stats_dict[ID][dkey]["GP"] = 1
                 #Checks if and how many out the player got as a pitcher through direct put outs
-                if haskey(D_stats["Outs Per Position"][1],"P")
-                    Stats_dict[ID][dkey]["PO"] = D_statsD_stats["Outs Per Position"][1]["P"]
+                if D_stats["Outs Per Position"] == []
+                    Stats_dict[ID][dkey]["PO"] = 0
+                elseif haskey(D_stats["Outs Per Position"][1],"P")
+                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1]["P"]
                 else
                     Stats_dict[ID][dkey]["PO"] = 0
                 end
@@ -336,8 +334,10 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
                 #Gets the stats for any other postion 
                 if D_stats["Outs Per Position"] == []
                     Stats_dict[ID][dkey]["PO"] = 0
+                elseif haskey(D_stats["Outs Per Position"][1],key)
+                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1][key]
                 else
-                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1][dkey]
+                    Stats_dict[ID][dkey]["PO"] = 0
                 end
                 Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
                 Stats_dict[ID][dkey]["BF"] = D_stats["Batters Per Position"][1][dkey]
@@ -425,10 +425,10 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::A
             Full_stats[char][key]["O_Stats"]["OPS"] = round(stats["SLG"] + stats["OBP"],digits=3)
         end
     end
-    return Full_stats
+    return Full_stats,games,wins
 end
 
 
-single_game_stats("JSON_games/decoded.20260620T223211_Gobster9-Vs-TubbaBlubba_3669907432.json","Gobster9")
+#single_game_stats("JSON_games/decoded.20260620T223211_Gobster9-Vs-TubbaBlubba_3669907432.json","Gobster9")
 
-#get_all_games("JSON_games","Gobster9")
+X = get_all_games("JSON_games","Gobster9")
