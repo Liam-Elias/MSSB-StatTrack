@@ -259,7 +259,6 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
     #Iterate over each $team Player
     for i in 0:8
         ID = json_dict["Character Game Stats"]["$team Roster $i"]["CharID"] #Char name
-
         Stats_dict[ID] = Dict{AbstractString,Any}() #Create a Key player using ID
 
         #Stats_dict[ID]["SuperS"] = json_dict["Character Game Stats"]["$team Roster $i"]["Superstar"] #Check if Superstar was enabled on Char, we storre this along side the poition as it applies to all stats for that player in the game.
@@ -269,10 +268,11 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
         #We also store Big plays along side positions as it can only be know as a summed total of all positions
         Stats_dict[ID]["BigPlays"] = D_stats["Big Plays"]
 
-        #Gets keys relted to the positions this character played in the game
-        if D_stats["Outs Per Position"] == []
+        #Checks for a 1 inning devestating loss of a home team 1 batter HR
+        if D_stats["Batters Per Position"] == []
             continue
         else
+            #Gets keys relted to the positions this character played in the game
             for key in keys(D_stats["Batters Per Position"][1])
 
                 #We convert the key to a string as it is stored as an symbol in the JSON file, but we want to store it as a string in our dict for easier access later
