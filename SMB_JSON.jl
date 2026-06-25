@@ -1,4 +1,4 @@
-using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools
+using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools,NativeFileDialog
 
 const names = ["Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
@@ -10,27 +10,53 @@ const D_stats_name = ["PO","OutsPP","BF","GP","INN"]
 
 const Positions = ["P","C","1B","2B","3B","SS","LF","RF","CF"]
 
-function get_json(P1::AbstractString; P2::AbstractString = nothing)
+function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing, CPU = false)
 
-    #Check for existing JSON file folder and creates one if needed
-    if isdir("./JSON_files/"*P1*"-"*P2)
-        nothing
+    #Check for existing JSON file folder and creates one if needed, makes folder name according to if P2 is provided or not
+    if isa(P2,AbstractString) 
+        sub_dir = P1*"-"*P2
+    elseif isnothing(P2) && CPU
+        sub_dir = P1*" with CPU"
     else
-        mkpath("./JSON_files/"*P1*"-"*P2)
+        sub_dir = P1
     end
 
+    if isdir("./JSON_files/"*sub_dir)
+         nothing
+    else
+            mkpath("./JSON_files/"*sub_dir)
+    end
+    
+    Stat_path = pick_folder() #allow user to select Rio Stat Files Path
+
+    if isempty(Stat_path)
+        println("Operation cancelled by the user") # prints if no dir is selected
+        return
+    else
+        println("Selected directory: ", Stat_path)
+    end
     #Iteratre through all files in source dir
     for file in readdir(Stat_path)
         src_path = joinpath(Stat_path,file)
-        dest_path = joinpath("./JSON_files/"*P1*"-"*P2,file)
+        dest_path = joinpath("./JSON_files/"*sub_dir,file)
 
-        if isnothig(P2)
+        if isnothing(P2)
             #Verify is a decoded JSON file and is a game containing Player 1 (RIO player Id's)
-            if isfile(src_path) && endswith(lowercase(file), ".json") && contains(lowercase(file), lowercase("decoded")) && contains(lowercase(file), lowercase(P1)) && !contains(lowercase(file), lowercase(CPU))
-                #Copy file if not currently in JSON_files dir or is newer version of file in JSON_files dir
-                if !isfile(dest_path) || (mtime(src_path) > mtime(dest_path))
-                    cp(src_path,dest_path; force=true)
-                    println("Copied: $file")
+            if CPU
+                if isfile(src_path) && endswith(lowercase(file), ".json") && contains(lowercase(file), lowercase("decoded")) && contains(lowercase(file), lowercase(P1)) 
+                    #Copy file if not currently in JSON_files dir or is newer version of file in JSON_files dir
+                    if !isfile(dest_path) || (mtime(src_path) > mtime(dest_path))
+                        cp(src_path,dest_path; force=true)
+                        println("Copied: $file")
+                    end
+                end
+            else
+                #Same as above but Does not allow CPU games
+                if isfile(src_path) && endswith(lowercase(file), ".json") && contains(lowercase(file), lowercase("decoded")) && contains(lowercase(file), lowercase(P1)) && !contains(lowercase(file), lowercase("CPU"))
+                    if !isfile(dest_path) || (mtime(src_path) > mtime(dest_path))
+                        cp(src_path,dest_path; force=true)
+                        println("Copied: $file")
+                    end
                 end
             end
         else
@@ -466,8 +492,3 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::A
     User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
     return User_stats
 end
-
-
-#single_game_stats("JSON_games/decoded.20260620T223211_Gobster9-Vs-TubbaBlubba_3669907432.json","Gobster9")
-
-X = get_all_games("JSON_games","Gobster9")["Team"]
