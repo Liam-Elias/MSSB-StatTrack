@@ -28,7 +28,6 @@ function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing
     end
     
     Stat_path = pick_folder() #allow user to select Rio Stat Files Path
-
     if isempty(Stat_path)
         println("Operation cancelled by the user") # prints if no dir is selected
         return
@@ -271,85 +270,89 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
         Stats_dict[ID]["BigPlays"] = D_stats["Big Plays"]
 
         #Gets keys relted to the positions this character played in the game
-        for key in keys(D_stats["Batters Per Position"][1])
+        if D_stats["Outs Per Position"] == []
+            continue
+        else
+            for key in keys(D_stats["Batters Per Position"][1])
 
-            #We convert the key to a string as it is stored as an symbol in the JSON file, but we want to store it as a string in our dict for easier access later
-            dkey = string(key)
+                #We convert the key to a string as it is stored as an symbol in the JSON file, but we want to store it as a string in our dict for easier access later
+                dkey = string(key)
 
-            Stats_dict[ID][dkey] = Dict{AbstractString,Any}()
+                Stats_dict[ID][dkey] = Dict{AbstractString,Any}()
 
-            #If the character played as a pitcher, get all pitching stats
-            if dkey == "P"
-                Stats_dict[ID][dkey]["ER"] = D_stats["Earned Runs"]
-                Stats_dict[ID][dkey]["R"] = D_stats["Runs Allowed"]
-                Stats_dict[ID][dkey]["BF"] = D_stats["Batters Faced"]
-                Stats_dict[ID][dkey]["SO"] = D_stats["Strikeouts"]
-                Stats_dict[ID][dkey]["BB"] = D_stats["Batters Walked"]
-                Stats_dict[ID][dkey]["HBP"] = D_stats["Batters Hit"]
-                Stats_dict[ID][dkey]["OutsPP"] = D_stats["Outs Pitched"]
-                Stats_dict[ID][dkey]["H"] = D_stats["Hits Allowed"]
-                Stats_dict[ID][dkey]["HR"] = D_stats["HRs Allowed"]
-                Stats_dict[ID][dkey]["PC"] = D_stats["Pitches Thrown"]
-                Stats_dict[ID][dkey]["SPC"] = D_stats["Star Pitches Thrown"]
-                Stats_dict[ID][dkey]["GP"] = 1
-                #Checks if and how many out the player got as a pitcher through direct put outs
-                if D_stats["Outs Per Position"] == []
-                    Stats_dict[ID][dkey]["PO"] = 0
-                elseif haskey(D_stats["Outs Per Position"][1],"P")
-                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1]["P"]
-                else
-                    Stats_dict[ID][dkey]["PO"] = 0
-                end
-                #Checks if the pitcher was the Starting Pitcher and if so gives a game start stat
-                if team == "Home"
-                    if json_dict["Events"][1]["Pitch"]["Pitcher Char Id"] == ID
-                        Stats_dict[ID][dkey]["GS"] = 1
+                #If the character played as a pitcher, get all pitching stats
+                if dkey == "P"
+                    Stats_dict[ID][dkey]["ER"] = D_stats["Earned Runs"]
+                    Stats_dict[ID][dkey]["R"] = D_stats["Runs Allowed"]
+                    Stats_dict[ID][dkey]["BF"] = D_stats["Batters Faced"]
+                    Stats_dict[ID][dkey]["SO"] = D_stats["Strikeouts"]
+                    Stats_dict[ID][dkey]["BB"] = D_stats["Batters Walked"]
+                    Stats_dict[ID][dkey]["HBP"] = D_stats["Batters Hit"]
+                    Stats_dict[ID][dkey]["OutsPP"] = D_stats["Outs Pitched"]
+                    Stats_dict[ID][dkey]["H"] = D_stats["Hits Allowed"]
+                    Stats_dict[ID][dkey]["HR"] = D_stats["HRs Allowed"]
+                    Stats_dict[ID][dkey]["PC"] = D_stats["Pitches Thrown"]
+                    Stats_dict[ID][dkey]["SPC"] = D_stats["Star Pitches Thrown"]
+                    Stats_dict[ID][dkey]["GP"] = 1
+                    #Checks if and how many out the player got as a pitcher through direct put outs
+                    if D_stats["Outs Per Position"] == []
+                        Stats_dict[ID][dkey]["PO"] = 0
+                    elseif haskey(D_stats["Outs Per Position"][1],"P")
+                        Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1]["P"]
                     else
-                        Stats_dict[ID][dkey]["GS"] = 0
+                        Stats_dict[ID][dkey]["PO"] = 0
                     end
-                else
-                    for event in keys(json_dict["Events"])
-                        if json_dict["Events"][event]["Half Inning"] == 1
-                            if json_dict["Events"][event]["Pitch"]["Pitcher Char Id"] == ID
-                                Stats_dict[ID][dkey]["GS"] = 1
-                                break
-                            else
-                                Stats_dict[ID][dkey]["GS"] = 0
-                                break
+                    #Checks if the pitcher was the Starting Pitcher and if so gives a game start stat
+                    if team == "Home"
+                        if json_dict["Events"][1]["Pitch"]["Pitcher Char Id"] == ID
+                            Stats_dict[ID][dkey]["GS"] = 1
+                        else
+                            Stats_dict[ID][dkey]["GS"] = 0
+                        end
+                    else
+                        for event in keys(json_dict["Events"])
+                            if json_dict["Events"][event]["Half Inning"] == 1
+                                if json_dict["Events"][event]["Pitch"]["Pitcher Char Id"] == ID
+                                    Stats_dict[ID][dkey]["GS"] = 1
+                                    break
+                                else
+                                    Stats_dict[ID][dkey]["GS"] = 0
+                                    break
+                                end
                             end
                         end
                     end
-                end
-                #calulates Innings Pitched stat in decimal form, where 1 out = .1 and 2 outs = .2
-                Stats_dict[ID][dkey]["IP"] = div(D_stats["Outs Pitched"],3) + (D_stats["Outs Pitched"]%3)/10
-                #Calculates WHIP, ERA, K/9, FIP, DICE, IP stats
-                if Stats_dict[ID][dkey]["IP"] != 0
-                    Stats_dict[ID][dkey]["WHIP"] = round((Stats_dict[ID][dkey]["BB"] + Stats_dict[ID][dkey]["H"])/Stats_dict[ID][dkey]["IP"],digits=3)
-                    Stats_dict[ID][dkey]["ERA"] = round((Stats_dict[ID][dkey]["ER"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
-                    Stats_dict[ID][dkey]["K/9"] = round((Stats_dict[ID][dkey]["SO"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
-                    Stats_dict[ID][dkey]["FIP"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*Stats_dict[ID][dkey]["BB"] - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3.1,digits=3)
-                    Stats_dict[ID][dkey]["DICE"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*(Stats_dict[ID][dkey]["BB"]+Stats_dict[ID][dkey]["HBP"]) - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3,digits=3)
+                    #calulates Innings Pitched stat in decimal form, where 1 out = .1 and 2 outs = .2
+                    Stats_dict[ID][dkey]["IP"] = div(D_stats["Outs Pitched"],3) + (D_stats["Outs Pitched"]%3)/10
+                    #Calculates WHIP, ERA, K/9, FIP, DICE, IP stats
+                    if Stats_dict[ID][dkey]["IP"] != 0
+                        Stats_dict[ID][dkey]["WHIP"] = round((Stats_dict[ID][dkey]["BB"] + Stats_dict[ID][dkey]["H"])/Stats_dict[ID][dkey]["IP"],digits=3)
+                        Stats_dict[ID][dkey]["ERA"] = round((Stats_dict[ID][dkey]["ER"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
+                        Stats_dict[ID][dkey]["K/9"] = round((Stats_dict[ID][dkey]["SO"]/Stats_dict[ID][dkey]["IP"])*9,digits=3)
+                        Stats_dict[ID][dkey]["FIP"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*Stats_dict[ID][dkey]["BB"] - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3.1,digits=3)
+                        Stats_dict[ID][dkey]["DICE"] = round(((13*Stats_dict[ID][dkey]["HR"] + 3*(Stats_dict[ID][dkey]["BB"]+Stats_dict[ID][dkey]["HBP"]) - 2*Stats_dict[ID][dkey]["SO"])/Stats_dict[ID][dkey]["IP"]) + 3,digits=3)
+                    else
+                        Stats_dict[ID][dkey]["WHIP"] = 0
+                        Stats_dict[ID][dkey]["ERA"] = 0
+                        Stats_dict[ID][dkey]["K/9"] = 0
+                        Stats_dict[ID][dkey]["FIP"] = 0
+                        Stats_dict[ID][dkey]["DICE"] = 0
+                    end
                 else
-                    Stats_dict[ID][dkey]["WHIP"] = 0
-                    Stats_dict[ID][dkey]["ERA"] = 0
-                    Stats_dict[ID][dkey]["K/9"] = 0
-                    Stats_dict[ID][dkey]["FIP"] = 0
-                    Stats_dict[ID][dkey]["DICE"] = 0
+                    #Gets the stats for any other postion 
+                    if D_stats["Outs Per Position"] == []
+                        Stats_dict[ID][dkey]["PO"] = 0
+                    elseif haskey(D_stats["Outs Per Position"][1],key)
+                        Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1][key]
+                    else
+                        Stats_dict[ID][dkey]["PO"] = 0
+                    end
+                    Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
+                    Stats_dict[ID][dkey]["BF"] = D_stats["Batters Per Position"][1][dkey]
+                    Stats_dict[ID][dkey]["GP"] = 1
+                    #Calulates Innings played stat in decimal form, where 1 out = .1 and 2 outs = .2
+                    Stats_dict[ID][dkey]["INN"] = div(Stats_dict[ID][dkey]["OutsPP"],3) + (Stats_dict[ID][dkey]["OutsPP"]%3)/10
                 end
-            else
-                #Gets the stats for any other postion 
-                if D_stats["Outs Per Position"] == []
-                    Stats_dict[ID][dkey]["PO"] = 0
-                elseif haskey(D_stats["Outs Per Position"][1],key)
-                    Stats_dict[ID][dkey]["PO"] = D_stats["Outs Per Position"][1][key]
-                else
-                    Stats_dict[ID][dkey]["PO"] = 0
-                end
-                Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
-                Stats_dict[ID][dkey]["BF"] = D_stats["Batters Per Position"][1][dkey]
-                Stats_dict[ID][dkey]["GP"] = 1
-                #Calulates Innings played stat in decimal form, where 1 out = .1 and 2 outs = .2
-                Stats_dict[ID][dkey]["INN"] = div(Stats_dict[ID][dkey]["OutsPP"],3) + (Stats_dict[ID][dkey]["OutsPP"]%3)/10
             end
         end
     end
