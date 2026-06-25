@@ -1,10 +1,14 @@
 using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools
 
-const Stat_path = "/Users/joshfenwick/Desktop/MSSB_stat_tracker/MSSB-StatTrack"
-
 const names = ["Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
 const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R"]
+
+const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP"]
+
+const D_stats_name = ["PO","OutsPP","BF","GP","INN"]
+
+const Positions = ["P","C","1B","2B","3B","SS","LF","RF","CF"]
 
 function get_json(P1::AbstractString; P2::AbstractString = nothing)
 
@@ -63,24 +67,23 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,Part
         elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
         else
-            return 0,0
+            return 0
         end
     else
         if isequal_normalized(Home_Player,RIO_ID,casefold=true) && isequal_normalized(Away_Player,Partner_ID,casefold=true)
             get_game_stats(json_dict,"Home")
         elseif isequal_normalized(Home_Player,Partner_ID,casefold=true) && isequal_normalized(Away_Player,RIO_ID,casefold=true)
             get_game_stats(json_dict,"Away")
-        elseif !isequal_normalized(Home_Player,Partner_ID,casefold=true) && !isequal_normalized(Away_Player,Partner_ID,casefold=true)
-            return 0,0
         else
-            error("$RIO_ID did not participate in this match")
+            return 0
         end
     end
 end
 
 function get_game_stats(json_dict::AbstractDict,team::AbstractString)
     #Gets all stats for a single game separated by defensive stats and offensive stats for a given game, returns a dict with all characters and their stats
-    Game_stats = Dict{AbstractString,Dict{AbstractString,Dict{AbstractString,Any}}}()
+    Game_stats = Dict{AbstractString,Any}()
+    Game_stats["Win"] = 0
     Off_dict = get_offensive_stats(json_dict,team)
     Def_dict = get_defensive_stats(json_dict,team)
     for char in keys(Off_dict)
@@ -90,18 +93,14 @@ function get_game_stats(json_dict::AbstractDict,team::AbstractString)
     end
         if team == "Home"
             if json_dict["Home Score"] > json_dict["Away Score"]
-                win = 1
-            else
-                win = 0
+                Game_stats["Win"] = 1
             end
         else
             if json_dict["Away Score"] > json_dict["Home Score"]
-                win = 1
-            else
-                win = 0
+                Game_stats["Win"] = 1
             end
         end
-    return Game_stats,win
+    return Game_stats
 end
 
     
@@ -120,51 +119,34 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
         O_stats = json_dict["Character Game Stats"]["$team Roster $i"]["Offensive Stats"] #Offensive Stats dict
 
         Stats_dict[ID]["AB"] = O_stats["At Bats"] 
-
         Stats_dict[ID]["H"] = O_stats["Hits"] 
-
         Stats_dict[ID]["HR"] = O_stats["Homeruns"] 
-
         Stats_dict[ID]["RBI"] = O_stats["RBI"] 
-
         Stats_dict[ID]["SB"] = O_stats["Bases Stolen"] 
-
         Stats_dict[ID]["2B"] = O_stats["Doubles"] 
-
         Stats_dict[ID]["3B"] = O_stats["Triples"] 
-
         Stats_dict[ID]["K"] = O_stats["Strikeouts"] 
-
         Stats_dict[ID]["BB"] = O_stats["Walks (4 Balls)"]
-
         Stats_dict[ID]["HBP"] = O_stats["Walks (Hit)"]
-        
         Stats_dict[ID]["SF"] = O_stats["Sac Flys"]   
-
         Stats_dict[ID]["PA"] = Stats_dict[ID]["AB"] + Stats_dict[ID]["BB"] + Stats_dict[ID]["HBP"] + Stats_dict[ID]["SB"]
 
         if O_stats["At Bats"] != 0
 
             Stats_dict[ID]["BA"] = round(O_stats["Hits"]/O_stats["At Bats"],digits=3)
-
             Stats_dict[ID]["SLG"] = round((O_stats["Singles"] + 2*O_stats["Doubles"]+3*O_stats["Triples"]+4*O_stats["Homeruns"])/(O_stats["At Bats"]),digits=3)
-
             Stats_dict[ID]["OBP"] = round((O_stats["Hits"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"])/(O_stats["At Bats"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"]+Stats_dict[ID]["SF"]),digits=3)
 
         elseif O_stats["At Bats"] == 0 && ( O_stats["Walks (4 Balls)"] != 0 || O_stats["Walks (Hit)"] != 0 || O_stats["Sac Flys"] != 0)
         
             Stats_dict[ID]["BA"] = 0
-
              Stats_dict[ID]["SLG"] = 0
-
              Stats_dict[ID]["OBP"] = round((O_stats["Hits"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"])/(O_stats["At Bats"]+Stats_dict[ID]["BB"]+Stats_dict[ID]["HBP"]+Stats_dict[ID]["SF"]),digits=3)
 
         else
 
              Stats_dict[ID]["BA"] = 0
-
              Stats_dict[ID]["SLG"] = 0
-
              Stats_dict[ID]["OBP"] = 0
 
         end
@@ -207,8 +189,6 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
                     end
 
                 end
-
-                    
                 
                 #Check if Batter made it home and is the current charecter ID
                 if json_dict["Events"][j]["Runner Batter"]["Runner Char Id"] == ID &&  json_dict["Events"][j]["Runner Batter"]["Runner Result Base"] == 4 
@@ -353,82 +333,141 @@ end
 function get_all_games(Path::AbstractString,RIO_ID::AbstractString,Partner_ID::AbstractString="All")
 
     #Makes a empth dict for all characters and all stats to be filled in later
-    #File goes, character name -> superstar state -> Offensive vs Defensive -> stat name -> stat value
-    Full_stats = Dict{AbstractString,Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}}()
+    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
+    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
+    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
+    User_stats = Dict{AbstractString,Any}()
+    User_stats["Team"] = Dict{AbstractString,Any}()
+    for stat in ["GP","W","L","Pct"]
+        User_stats["Team"][stat] = 0
+    end
     for char in names
-        Full_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
-        Full_stats[char][0] = Dict{AbstractString,Dict{AbstractString,Any}}()
-        Full_stats[char][1] = Dict{AbstractString,Dict{AbstractString,Any}}()
-        Full_stats[char][0]["O_Stats"] = Dict{AbstractString,Any}()
-        Full_stats[char][1]["O_Stats"] = Dict{AbstractString,Any}()
-        for stat in O_stats_name
-            Full_stats[char][0]["O_Stats"][stat] = 0
-            Full_stats[char][1]["O_Stats"][stat] = 0
+        User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+        for SuperS in 0:1
+        User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
+            for key in ["O_Stats","D_Stats"]
+                User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
+            end
+            for stat in O_stats_name
+                User_stats[char][SuperS]["O_Stats"][stat] = 0
+            end
+            User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
+            for pos in Positions
+                User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+                if pos == "P"
+                    for stat in P_stats_name
+                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+                    end
+                else
+                    for stat in D_stats_name
+                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+                    end
+                end
+            end
         end
     end
 
-    wins = 0
-    games = 0
-    #Iteratre through all games with given RIO_ID or Partner_ID and add stats to Full_stats dict
+    #Iteratre through all games with given RIO_ID or Partner_ID and add stats to User_stats dict
     for game in readdir(Path)
         if contains(game, "decoded") && contains(game, ".json")
             src_path = joinpath(Path,game)
-            game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)[1]
-            if single_game_stats(src_path,RIO_ID,Partner_ID)[2] == 1
-                wins += 1
-            end
+            game_stats = single_game_stats(src_path,RIO_ID,Partner_ID)
             #Skips game if RIO_ID did not participate in the game or if Partner_ID was specified and did not participate in the game
             if game_stats == 0
                 continue
             else 
-                games += 1 
-                #Appends stats from game_stats to Full_stats
+                User_stats["Team"]["GP"] += 1
+                if game_stats["Win"] == 1
+                    User_stats["Team"]["W"] += 1
+                    delete!(game_stats, "Win")
+                else
+                    User_stats["Team"]["L"] += 1
+                    delete!(game_stats, "Win")
+                end
+                #Appends stats from game_stats to User_stats
                 for char in keys(game_stats)
                     SuperS = pop!(game_stats[char]["O_Stats"], "SuperS")
                     for stat in O_stats_name
-                        Full_stats[char][SuperS]["O_Stats"][stat] += game_stats[char]["O_Stats"][stat]
+                        User_stats[char][SuperS]["O_Stats"][stat] += game_stats[char]["O_Stats"][stat]
+                    end
+                    for pos in keys(game_stats[char]["D_Stats"])
+                        if pos == "P"
+                            for stat in P_stats_name
+                                User_stats[char][SuperS]["D_Stats"][pos][stat] += game_stats[char]["D_Stats"][pos][stat]
+                            end
+                        elseif pos == "BigPlays"
+                            User_stats[char][SuperS]["D_Stats"][pos] += game_stats[char]["D_Stats"][pos]
+                        else
+                            for stat in D_stats_name
+                                User_stats[char][SuperS]["D_Stats"][pos][stat] += game_stats[char]["D_Stats"][pos][stat]
+                            end
+                        end
                     end
                 end
             end
         end
     end
     #Calulates BA, SLG, OBP, OPS for each character and each superstar state
-    for char in keys(Full_stats)
-        for key in keys(Full_stats[char])
-            stats = Full_stats[char][key]["O_Stats"]
-            #Skips if no AB to avoid division by zero, but still calculates OBP if there are BB, HBP, or SF
-            if stats["AB"] != 0
+    for char in keys(User_stats)
+        if char == "Team"
+            continue
+        else    
+            for key in keys(User_stats[char])
+                O_stats = User_stats[char][key]["O_Stats"]
+                D_stats = User_stats[char][key]["D_Stats"]
+                #Skips if no AB to avoid division by zero, but still calculates OBP if there are BB, HBP, or SF
+                if O_stats["AB"] != 0
 
-                Full_stats[char][key]["O_Stats"]["BA"] = round(stats["H"]/stats["AB"],digits=3)
+                    User_stats[char][key]["O_Stats"]["BA"] = round(O_stats["H"]/O_stats["AB"],digits=3)
+                    User_stats[char][key]["O_Stats"]["SLG"] = round((O_stats["H"] + O_stats["2B"] + 2*O_stats["3B"] + 3*O_stats["HR"])/(O_stats["AB"]),digits=3)
+                    User_stats[char][key]["O_Stats"]["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
 
-                Full_stats[char][key]["O_Stats"]["SLG"] = round((stats["H"] + stats["2B"] + 2*stats["3B"] + 3*stats["HR"])/(stats["AB"]),digits=3)
+                elseif O_stats["AB"] == 0 && ( O_stats["BB"] != 0 || O_stats["HBP"] != 0 || O_stats["SF"] != 0)
+                
+                    User_stats[char][key]["O_Stats"]["BA"] = 0
+                    User_stats[char][key]["O_Stats"]["SLG"] = 0
+                    User_stats[char][key]["O_Stats"]["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
 
-                Full_stats[char][key]["O_Stats"]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+                else
 
-            elseif stats["AB"] == 0 && ( stats["BB"] != 0 || stats["HBP"] != 0 || stats["SF"] != 0)
-            
-                Full_stats[char][key]["O_Stats"]["BA"] = 0
+                    User_stats[char][key]["O_Stats"]["BA"] = 0
+                    User_stats[char][key]["O_Stats"]["SLG"] = 0
+                    User_stats[char][key]["O_Stats"]["OBP"] = 0
 
-                 Full_stats[char][key]["O_Stats"]["SLG"] = 0
+                end
 
-                 Full_stats[char][key]["O_Stats"]["OBP"] = round((stats["H"]+stats["BB"]+stats["HBP"])/(stats["AB"]+stats["BB"]+stats["HBP"]+stats["SF"]),digits=3)
+                User_stats[char][key]["O_Stats"]["OPS"] = round(O_stats["SLG"] + O_stats["OBP"],digits=3)
 
-            else
-
-                 Full_stats[char][key]["O_Stats"]["BA"] = 0
-
-                 Full_stats[char][key]["O_Stats"]["SLG"] = 0
-
-                 Full_stats[char][key]["O_Stats"]["OBP"] = 0
-
+                for pos in Positions
+                    if pos == "P"
+                        OutsPP = pop!(D_stats[pos],"OutsPP")
+                        User_stats[char][key]["D_Stats"][pos]["IP"] = div(OutsPP,3) + (OutsPP%3)/10
+                        if User_stats[char][key]["D_Stats"][pos]["IP"] != 0
+                            User_stats[char][key]["D_Stats"][pos]["WHIP"] = round((D_stats[pos]["BB"] + D_stats[pos]["H"])/D_stats[pos]["IP"],digits=3)
+                            User_stats[char][key]["D_Stats"][pos]["ERA"] = round((D_stats[pos]["ER"]/D_stats[pos]["IP"])*9,digits=3)
+                            User_stats[char][key]["D_Stats"][pos]["K/9"] = round((D_stats[pos]["SO"]/D_stats[pos]["IP"])*9,digits=3)
+                            User_stats[char][key]["D_Stats"][pos]["FIP"] = round(((13*D_stats[pos]["HR"] + 3*D_stats[pos]["BB"] - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3.1,digits=3)
+                            User_stats[char][key]["D_Stats"][pos]["DICE"] = round(((13*D_stats[pos]["HR"] + 3*(D_stats[pos]["BB"] + D_stats[pos]["HBP"]) - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3,digits=3)
+                        else
+                            User_stats[char][key]["D_Stats"][pos]["WHIP"] = 0
+                            User_stats[char][key]["D_Stats"][pos]["ERA"] = 0
+                            User_stats[char][key]["D_Stats"][pos]["K/9"] = 0
+                            User_stats[char][key]["D_Stats"][pos]["FIP"] = 0
+                            User_stats[char][key]["D_Stats"][pos]["DICE"] = 0
+                        end
+                    else
+                        OutsPP = pop!(D_stats[pos],"OutsPP")
+                        User_stats[char][key]["D_Stats"][pos]["INN"] = div(OutsPP,3) + (OutsPP%3)/10
+                    end
+                end
             end
-            Full_stats[char][key]["O_Stats"]["OPS"] = round(stats["SLG"] + stats["OBP"],digits=3)
         end
     end
-    return Full_stats,games,wins
+    User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
+    return User_stats
 end
 
 
 #single_game_stats("JSON_games/decoded.20260620T223211_Gobster9-Vs-TubbaBlubba_3669907432.json","Gobster9")
 
-X = get_all_games("JSON_games","Gobster9")
+X = get_all_games("JSON_games","Gobster9")["Team"]
