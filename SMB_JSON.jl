@@ -1,8 +1,8 @@
 using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools,NativeFileDialog,Dates
 
-const names = ["Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+const names = ["Total","Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
-const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R"]
+const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R","SH","GP"]
 
 const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP"]
 
@@ -71,14 +71,6 @@ function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing
     end
 end
 
-function JSON_to_dict(stat_file::AbstractString)
-
-    #JSON file for game in form of dictionary
-    json_dict = JSON3.parsefile(stat_file)
-
-    return json_dict
-end
-
 function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,)
 
     #JSON file for game in form of dictionary
@@ -86,11 +78,13 @@ function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,)
     Home_Player = json_dict["Home Player"]
     Away_Player = json_dict["Away Player"]
     if isequal_normalized(Home_Player,RIO_ID,casefold=true)
-        get_game_stats(json_dict)
+        game = get_game_stats(json_dict)
+        return game,json_dict
     elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
-        get_game_stats(json_dict)
+        game = get_game_stats(json_dict)
+        return game,json_dict
     else
-        return 0
+        return 0,json_dict
     end
 end
 
@@ -112,21 +106,6 @@ function get_game_stats(json_dict::AbstractDict)
     end
     Gen_stats = get_gen_stats(json_dict)
     Game_stats["GameLog"] = Gen_stats
-    for key in keys(Game_stats)
-        if key == "GameLog"
-            continue
-        else
-            if Game_stats["GameLog"]["Home Player"] == key
-                for char in keys(Game_stats[key])
-                    Game_stats["GameLog"]["Home H"] += Game_stats[key][char]["O_Stats"]["H"]
-                end
-            else
-                for char in keys(Game_stats[key])
-                Game_stats["GameLog"]["Away H"] += Game_stats[key][char]["O_Stats"]["H"]
-                end
-            end
-        end
-    end
     return Game_stats
 end
 
@@ -146,6 +125,8 @@ function get_gen_stats(json_dict::AbstractDict)
     game_stats["Time"] = string(Time(Time_end-Time_start))
     game_stats["GL"] = json_dict["Innings Selected"]
     game_stats["IP"] = json_dict["Innings Played"]
+    game_stats["H_R"] = 0
+    game_stats["A_R"] = 0
     #Box score counts runs gotten per inning
     game_stats["BoxScore"] = Dict{Int,Dict{AbstractString,Any}}()
     for inn in 1:game_stats["IP"]
@@ -157,38 +138,6 @@ function get_gen_stats(json_dict::AbstractDict)
         game_stats["$team Score"] = json_dict["$team Score"]
         game_stats["$team Player"] = json_dict["$team Player"]
         game_stats["$team H"] = 0
-        game_stats["$team R"] = 0
-    end
-    Events = json_dict["Events"]
-    #Cycles through all events and counts Hits and Runs achived
-    hscore =0
-    ascore = 0
-    inn = 0
-    for i in keys(Events)
-        inn = Events[i]["Inning"]
-        if Events[i]["Half Inning"] == 0
-            if Events[i]["Away Score"] > ascore
-                game_stats["Away R"] += Events[i]["Away Score"] - (ascore)
-                game_stats["BoxScore"][inn]["A"] += (Events[i]["Away Score"] - ascore)
-                ascore = Events[i]["Away Score"]
-            end
-        else        
-            if Events[i]["Home Score"] > hscore
-                game_stats["Home R"] += (Events[i]["Home Score"] - hscore)
-                game_stats["BoxScore"][inn]["H"] += (Events[i]["Home Score"] - hscore)
-                hscore = Events[i]["Home Score"]
-            end
-        end
-    end
-    #Adds walk off runs as those are lost in the last event
-    if game_stats["Home Score"] != game_stats["Home R"]
-        game_stats["BoxScore"][inn]["H"] += (game_stats["Home Score"]-game_stats["Home R"])
-        game_stats["Home R"] += (game_stats["Home Score"]-game_stats["Home R"])
-    end
-    #Adds last away at-bat runs if bottom of the inning was not played
-    if game_stats["Away Score"] != game_stats["Away R"]
-        game_stats["BoxScore"][inn]["A"] += (game_stats["Away Score"]-game_stats["Away R"])
-        game_stats["Away R"] += (game_stats["Away Score"]-game_stats["Away R"])
     end
     return game_stats
 end 
@@ -210,7 +159,8 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
         Stats_dict[ID]["AB"] = O_stats["At Bats"] 
         Stats_dict[ID]["H"] = O_stats["Hits"] 
         Stats_dict[ID]["HR"] = O_stats["Homeruns"] 
-        Stats_dict[ID]["RBI"] = O_stats["RBI"] 
+        Stats_dict[ID]["RBI"] = O_stats["RBI"]
+        Stats_dict[ID]["SH"] = O_stats["Star Hits"] 
         Stats_dict[ID]["SB"] = O_stats["Bases Stolen"] 
         Stats_dict[ID]["2B"] = O_stats["Doubles"] 
         Stats_dict[ID]["3B"] = O_stats["Triples"] 
@@ -220,6 +170,7 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
         Stats_dict[ID]["SF"] = O_stats["Sac Flys"]   
         Stats_dict[ID]["WC"] = json_dict["Character Game Stats"]["$team Roster $i"]["Captain"]
         Stats_dict[ID]["PA"] = Stats_dict[ID]["AB"] + Stats_dict[ID]["BB"] + Stats_dict[ID]["HBP"] + Stats_dict[ID]["SB"]
+        Stats_dict[ID]["GP"] = 1
 
         if O_stats["At Bats"] != 0
 
@@ -242,76 +193,7 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
         end
 
         Stats_dict[ID]["OPS"] = round(Stats_dict[ID]["SLG"] + Stats_dict[ID]["OBP"],digits=3)
-
-        #This part is a pain in the ass because runs scored by players is not kept track in player stats, so we have to search through events and identify them
-
-        RS = 0
-
-        for j in 1:json_dict["Events"][end]["Event Num"]+1  
-
-            if true #json_dict["Events"][j]["RBI"] != 0 # only care about runs with non-zero RBI
-
-                if json_dict["Events"][j]["Result of AB"] == "HR" && json_dict["Events"][j]["Runner Batter"]["Runner Result Base"] == 0# on HR starting base and ending base are same so have to check if current ID shows up anywhere
-                    if json_dict["Events"][j]["Runner Batter"]["Runner Char Id"] == ID
-                        RS +=1
-                    end
-                    
-                    if haskey(json_dict["Events"][j], "Runner 1B" )
-
-                        if json_dict["Events"][j]["Runner 1B"]["Runner Char Id"] == ID
-                            RS += 1
-                        end
-                    end
-
-                    if haskey(json_dict["Events"][j], "Runner 2B" )
-
-                        if json_dict["Events"][j]["Runner 2B"]["Runner Char Id"] == ID
-                            RS += 1
-                        end
-                    end
-
-                    if haskey(json_dict["Events"][j], "Runner 3B" )
-
-                        if json_dict["Events"][j]["Runner 3B"]["Runner Char Id"] == ID
-                            RS += 1
-                        end
-                    end
-
-                end
-                
-                #Check if Batter made it home and is the current charecter ID
-                if json_dict["Events"][j]["Runner Batter"]["Runner Char Id"] == ID &&  json_dict["Events"][j]["Runner Batter"]["Runner Result Base"] == 4 
-                    RS += 1
-                end
-
-                #Check if there was a 1st base man and if they made it home and is the current charecter ID
-                if haskey(json_dict["Events"][j], "Runner 1B" )
-
-                    if json_dict["Events"][j]["Runner 1B"]["Runner Char Id"] == ID &&  json_dict["Events"][j]["Runner 1B"]["Runner Result Base"] == 4
-                        RS += 1
-                    end
-                end
-
-                #Check if there was a 2nd base man and if they made it home and is the current charecter ID
-                if haskey(json_dict["Events"][j], "Runner 2B" )
-
-                    if json_dict["Events"][j]["Runner 2B"]["Runner Char Id"] == ID &&  json_dict["Events"][j]["Runner 2B"]["Runner Result Base"] == 4
-                        RS += 1
-                    end
-                end
-
-                #Check if there was a 3rd base man and if they made it home and is the current charecter ID
-                if haskey(json_dict["Events"][j], "Runner 3B" )
-
-                    if json_dict["Events"][j]["Runner 3B"]["Runner Char Id"] == ID &&  json_dict["Events"][j]["Runner 3B"]["Runner Result Base"] == 4
-                        RS += 1
-                    end
-                end
-            end
-        end
-
-        Stats_dict[ID]["R"] = RS
-             
+        Stats_dict[ID]["R"] = 0      
     end
     return Stats_dict
 end
@@ -423,118 +305,6 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
     return Stats_dict
 end
 
-function get_AB_pitch(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString,Team::AbstractString)
-    #function to get all at bats abd balls pitched by the team
-    Events = game_dict["Events"]
-    #makes dict's to stroe data
-    for i in keys(Events) #run through all events
-        AB = Dict{AbstractString,Any}()
-        Throw = Dict{AbstractString,Any}()
-        if haskey(Events[i],"Pitch")#if a ball was pitched, get its info
-            batter = Events[i]["Runner Batter"]["Runner Char Id"]
-            pitcher = Events[i]["Pitch"]["Pitcher Char Id"]
-            if Events[i]["Half Inning"] == "0"
-                for char in 0:8
-                    if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == pitcher
-                        Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                        AB["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                    end
-                    if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
-                        AB["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                        Throw["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                    end
-                end
-            else
-                for char in 0:8
-                    if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == batter
-                        Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                        AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                    end
-                    if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
-                        Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                        AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                    end
-                end
-            end
-            Throw["PT"] = Events[i]["Pitch"]["Pitch Type"]
-            Throw["CT"] = Events[i]["Pitch"]["Charge Type"]
-            Throw["ST"] = Events[i]["Pitch"]["Star Pitch"]
-            Throw["BC-X"] = Events[i]["Pitch"]["Bat Contact Pos - X"]
-            Throw["BC-Z"] = Events[i]["Pitch"]["Bat Contact Pos - Z"]
-            Throw["PS"] = Events[i]["Pitch"]["Pitch Speed"]
-            Throw["Erg"] = Events[i]["Pitcher Stamina"]
-            Throw["K"] = Events[i]["Pitch"]["In Strikezone"]
-            Throw["Chem Links"] = Events[i]["Chemistry Links on Base"]
-            Throw["Pos"] = Events[i]["Pitch"]["Ball Position - Strikezone"]
-            Throw["Swing Type"] = Events[i]["Pitch"]["Type of Swing"]
-            Throw["Batter"] = batter
-            #appends data to the pitchers log
-            key = length(Pitcher_Throws[pitcher]) +1
-            Pitcher_Throws[pitcher][key] = Throw
-            if Events[i]["Result of AB"] != "None" #since Ab's can only result of pitched balls we now check to make sure we swung or not
-                AB["Result"] = Events[i]["Result of AB"]
-                if AB["Result"] in ["Single","Double","Triple","HR"]
-                    AB["Hit"] =1
-                else
-                    AB["Hit"] = 0
-                end
-                AB["Pitcher"] = pitcher
-                if haskey(Events[i],"Runner 2B") || haskey(Events[i],"Runner 3B") #check if RISP was present or not 
-                    AB["RISP"] = 1
-                else
-                    AB["RISP"] = 0
-                end
-                AB["RBI"] = Events[i]["RBI"]
-                AB["PErg"] = Throw["Erg"]
-                AB["Chem Links"] = Throw["Chem Links"]
-                AB["Balls"] = Events[i]["Balls"]
-                AB["Strikes"] = Events[i]["Strikes"]
-                if haskey(Events[i]["Pitch"],"Contact") #Checks to make sure we made contact 
-                    contact = Events[i]["Pitch"]["Contact"]
-                    AB["Contact"] = 1
-                    AB["Type"] = contact["Type of Contact"]
-                    AB["Ball Power"] = contact["Ball Power"]
-                    AB["Vert Angle"] = contact["Vert Angle"]
-                    AB["Horiz Angle"] = contact["Horiz Angle"]
-                    for coord in ["X","Y","X"]
-                        AB["velo $coord"] = contact["Ball Velocity - $coord"]
-                        AB["Landing $coord"] = contact["Ball Landing Position - $coord"]
-                    end
-                    AB["Con X"] = contact["Ball Contact Pos - X"]
-                    AB["Con Z"] = contact["Ball Contact Pos - Z"]
-                    AB["Frame"] = contact["Frame of Swing Upon Contact"]
-                    AB["Hang"] = contact["Ball Hang Time"]
-                    AB["Height"] = contact["Ball Max Height"]
-                    AB["Quality"] = contact["Contact Quality"]
-                    AB["CAbs"] = contact["Contact Absolute"]
-                    AB["Result"] = contact["Contact Result - Primary"]
-                    AB["Charge up"] = contact["Charge Power Up"]
-                    AB["Charge Down"] = contact["Charge Power Down"]
-                    AB["SSFS"] = contact["Star Swing Five-Star"]
-                else #no contact? we return false to save room within the files
-                    AB["Contact"] = 0
-                end
-                #appends data to the batters log
-            key = length(Batter_ABS[batter]) +1
-            Batter_ABS[batter][key] = AB
-            end
-        end
-        AB = 0
-        Throw = 0
-    end
-    return Batter_ABS,Pitcher_Throws
-end
-
-function get_AB_pitch_test(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,stat_file::AbstractString,RIO_ID::AbstractString)
-    #Checks if player was Home or Away
-    json_dict = JSON3.parsefile(stat_file)
-    Home_Player = json_dict["Home Player"]
-    if Home_Player == RIO_ID
-        get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Home")
-    else
-        get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Away")
-    end
-end
 function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
 
     #Makes a empth dict for all characters and all stats to be filled in later
@@ -571,7 +341,29 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
             end
         end
     end
-
+    # User_stats["Total"] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+    # for SuperS in 0:1
+    #     User_stats["Total"][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
+    #     for key in ["O_Stats","D_Stats"]
+    #         User_stats["Total"][SuperS][key] = Dict{AbstractString,Any}()
+    #     end
+    #     for stat in O_stats_name
+    #         User_stats["Total"][SuperS]["O_Stats"][stat] = 0
+    #     end
+    #     User_stats["Total"][SuperS]["D_Stats"]["BigPlays"] = 0
+    #     for pos in Positions
+    #         User_stats["Total"][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+    #         if pos == "P"
+    #             for stat in P_stats_name
+    #                 User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
+    #             end
+    #         else
+    #             for stat in D_stats_name
+    #                 User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
+    #             end
+    #         end
+    #     end
+    # end
     function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::AbstractString,SuperS::Int,alt_char::AbstractString=char)
         for stat in O_stats_name
             User_stats[alt_char][SuperS]["O_Stats"][stat] += game_dict[char]["O_Stats"][stat]
@@ -592,14 +384,13 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
         return User_stats
     end
 
-    function add_game(GameLog::AbstractDict,game_stats::AbstractDict)
+    function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
         #adds played games to the game log indexed by date and time
         # Date = game_stats["GameLog"]["Date"]
         # Time = game_stats["GameLog"]["Start Time"]
         # key = Date*" "*Time
-        key = length(GameLog)+1
-        GameLog[key] = Dict{AbstractString,Any}()
-        GameLog[key] = game_stats
+        GameLog[game] = Dict{AbstractString,Any}()
+        GameLog[game] = game_stats
         return GameLog
     end
 
@@ -622,24 +413,29 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
         end
         return User_stats
     end
+
     #Iteratre through all games with given RIO_ID
-    GameLog = Dict{Int,Any}()
+    GameLog = Dict{AbstractString,Any}()
     Batter_ABS = Dict{AbstractString,Dict{Int,Any}}()
     Pitcher_Throws = Dict{AbstractString,Dict{Int,Any}}()
     for name in names
         Batter_ABS[name] = Dict{Int,Any}()
         Pitcher_Throws[name] = Dict{Int,Any}()
     end
+    TIP = 0
     for game in readdir(Path)
         if contains(game, "decoded") && contains(game, ".json")
             src_path = joinpath(Path,game)
-            game_stats = single_game_stats(src_path,RIO_ID)
-            GameLog = add_game(GameLog,game_stats)
-            Batter_ABS,Pitcher_Throws = get_AB_pitch_test(Batter_ABS,Pitcher_Throws,src_path,RIO_ID)
+            game_stats,game_dict = single_game_stats(src_path,RIO_ID)
             #Skips game if RIO_ID did not participate in the game
             if game_stats == 0
                 continue
+            elseif game_dict["Events"][1]["Inning"] != 1
+                continue
+            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
+                continue
             else 
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
                 User_stats["Team"]["GP"] += 1
                 if game_stats["GameLog"]["Home Player"] == RIO_ID
                     if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
@@ -665,6 +461,8 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
                     User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
                 end
             end
+            GameLog = add_game(GameLog,game_stats,game)
+            TIP += IPPG
         end
     end
     #Averages like character stats. first adds the to the team
@@ -738,6 +536,15 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
             User_stats = Add_self_stats(User_stats,char,SuperS,"Toad")
         end
     end
+    for char in names
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
+        end
+    end
+    INN = 0
+    for key in keys(GameLog)
+        INN += GameLog[key]["GameLog"]["GL"]
+    end
     #Calulates BA, SLG, OBP, OPS for each character and each superstar state
     for char in keys(User_stats)
         if char == "Team"
@@ -746,7 +553,23 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
             User_stats = calc_stats(User_stats,char)
         end
     end
-    User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
+    if User_stats["Team"]["GP"] != 0
+        User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
+    else
+        User_stats["Team"]["Pct"] = 0
+    end
+    for SS in 0:1
+        User_stats["Total"][SS]["O_Stats"]["GP"] = User_stats["Team"]["GP"]
+        for pos in Positions
+            if pos == "P"
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["IP"] = div(TIP,3) + (TIP%3)/10
+            else
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["INN"] = INN
+            end
+        end
+    end
     #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
     return User_stats,GameLog,Batter_ABS,Pitcher_Throws
 end
@@ -812,16 +635,424 @@ function Collect_Stats(Path::AbstractString,RIO_ID::AbstractString,)
         mkpath("Stats/$RIO_ID") 
     end
     open("Stats/$RIO_ID/Team_stats.json","w") do file
-        JSON3.write(file,User_stats)
+        JSON3.pretty(file,User_stats)
     end
     open("Stats/$RIO_ID/GameLogs.json","w") do file
-        JSON3.write(file,GameLog)
+        JSON3.pretty(file,GameLog)
     end
     open("Stats/$RIO_ID/Batting_data.json","w") do file
-        JSON3.write(file,Batter_ABS)
+        JSON3.pretty(file,Batter_ABS)
     end
     open("Stats/$RIO_ID/Pitch_data.json","w") do file
-        JSON3.write(file,Pitcher_Throws)
+        JSON3.pretty(file,Pitcher_Throws)
     end
     return User_stats,GameLog,Batter_ABS,Pitcher_Throws
 end
+
+function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_stats::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString)
+    #function to get all at bats abd balls pitched by the team
+    Events = game_dict["Events"]
+    #makes dict's to store data
+    Alt_ID = collect(keys(game_stats))
+    filter!(x -> x != RIO_ID && x != "GameLog", Alt_ID)
+    Alt_ID = Alt_ID[1]
+    max = length(Events)
+    AB = Dict{AbstractString,Any}()
+    Throw = Dict{AbstractString,Any}()
+    for i in keys(Events) #run through all events
+        # display("Event: $(i-1)")
+        # display("Home: $(game_stats["GameLog"]["H_R"])")
+        # display("Away: $(game_stats["GameLog"]["A_R"])")
+        if haskey(Events[i],"Pitch") #if a ball was pitched, get its info
+            inn = Events[i]["Inning"]
+            hinn = Events[i]["Half Inning"]
+            Throw,AB,batter,pitcher = get_throw_data(Events[i],Throw,AB,hinn,game_dict)
+            #appends data to the pitchers log
+            key = length(Pitcher_Throws[pitcher]) +1
+            Pitcher_Throws[pitcher][key] = Throw
+            if Events[i]["Result of AB"] != "None" #since AB's can only result of pitched balls we now check to make sure we swung or not
+                AB,game_stats = get_AB_data(Events,Throw,AB,game_stats,RIO_ID,Alt_ID,hinn,inn,batter,pitcher,max,i)
+            #appends data to the batters log
+            key = length(Batter_ABS[batter]) +1
+            Batter_ABS[batter][key] = AB
+            end
+        end
+        AB = Dict{AbstractString,Any}()
+        Throw = Dict{AbstractString,Any}()
+    end
+    for key in keys(game_stats)
+        if key == "GameLog"
+            continue
+        else
+            if game_stats["GameLog"]["Home Player"] == key
+                for char in keys(game_stats[key])
+                    game_stats["GameLog"]["Home H"] += game_stats[key][char]["O_Stats"]["H"]
+                end
+            else
+                for char in keys(game_stats[key])
+                    game_stats["GameLog"]["Away H"] += game_stats[key][char]["O_Stats"]["H"]
+                end
+            end
+        end
+    end
+    if RIO_ID == game_dict["Away Player"] && Events[max]["Half Inning"] == 1
+        GL = game_dict["Innings Selected"]-1
+        LIOP = Events[max]["Outs"] + Events[max]["Num Outs During Play"]
+        IPPG = GL*3 + LIOP
+    elseif RIO_ID == game_dict["Home Player"] && Events[max]["Half Inning"] == 0
+        GL = game_dict["Innings Selected"]-1
+        LIOP = 0
+        IPPG = GL*3 + LIOP
+    else
+        IPPG = game_dict["Innings Selected"]*3
+    end
+    return Batter_ABS,Pitcher_Throws,game_stats, IPPG
+end
+
+function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict,hinn::Int,game_dict::AbstractDict)
+    if hinn == 0
+        batter = Event["Runner Batter"]["Runner Char Id"]
+        pitcher = Event["Pitch"]["Pitcher Char Id"]
+        for char in 0:8
+            if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == pitcher
+                Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+                AB["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+                break
+            elseif game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
+                AB["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+                Throw["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+                break
+            end
+        end
+    else
+        batter = Event["Runner Batter"]["Runner Char Id"]
+        pitcher = Event["Pitch"]["Pitcher Char Id"]
+        for char in 0:8
+            if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == batter
+                Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+                AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+                break
+            elseif game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
+                Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+                AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+                break
+            end
+        end
+    end
+    Throw["PT"] = Event["Pitch"]["Pitch Type"]
+    Throw["CT"] = Event["Pitch"]["Charge Type"]
+    Throw["ST"] = Event["Pitch"]["Star Pitch"]
+    Throw["BC-X"] = Event["Pitch"]["Bat Contact Pos - X"]
+    Throw["BC-Z"] = Event["Pitch"]["Bat Contact Pos - Z"]
+    Throw["PS"] = Event["Pitch"]["Pitch Speed"]
+    Throw["Erg"] = Event["Pitcher Stamina"]
+    Throw["K"] = Event["Pitch"]["In Strikezone"]
+    Throw["Chem Links"] = Event["Chemistry Links on Base"]
+    Throw["Pos"] = Event["Pitch"]["Ball Position - Strikezone"]
+    Throw["Swing Type"] = Event["Pitch"]["Type of Swing"]
+    Throw["Batter"] = batter
+    return Throw,AB,batter,pitcher
+end
+
+function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::AbstractString,Alt_ID::AbstractString,hinn::Int,inn::Int,batter::AbstractString,pitcher::AbstractString,max::Int,i::Int)
+    AB["Result"] = Events[i]["Result of AB"]
+    if haskey(game_stats[RIO_ID],batter)
+        USER = RIO_ID
+    else
+        USER = Alt_ID
+    end
+    if AB["Result"] in ["Single","Double","Triple","HR"]
+        AB["Hit"] =1
+    else
+        AB["Hit"] = 0
+    end
+    AB["Pitcher"] = pitcher
+    function base_add_data(game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString)
+        game_stats[USER][batter]["O_Stats"]["R"] += 1
+        if hinn == 0
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+        else
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+        end 
+    end
+
+    if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
+        base_add_data(game_stats,batter,hinn,inn,USER)
+        if haskey(Events[i],"Runner 1B")
+            AB["1B"] = 1
+            base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+        end
+        if haskey(Events[i],"Runner 2B")
+            AB["2B"] = 1
+            base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+        end
+        if haskey(Events[i],"Runner 3B")
+            AB["3B"] = 1
+            base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+        end
+    elseif AB["Result"] in ["Single","Double","Triple","HR"]
+        if Events[i]["Runner Batter"]["Runner Result Base"] == 4
+            base_add_data(game_stats,batter,hinn,inn,USER)
+        end
+        if haskey(Events[i],"Runner 1B")
+            AB["1B"] = 1
+            if Events[i]["Runner 1B"]["Runner Result Base"] == 4
+                base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+        if haskey(Events[i],"Runner 2B")
+            AB["2B"] = 1
+            if Events[i]["Runner 2B"]["Runner Result Base"] == 4
+                base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+        if haskey(Events[i],"Runner 3B")
+            AB["3B"] = 1
+            if Events[i]["Runner 3B"]["Runner Result Base"] == 4
+                base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+    elseif AB["Result"] in ["Walk (HBP)","Walk (BB)"]
+        if haskey(Events[i],"Runner 1B")
+            AB["1B"] = 1
+        end
+        if haskey(Events[i],"Runner 2B")
+            AB["2B"] = 1
+        end
+        if haskey(Events[i],"Runner 3B")
+            AB["3B"] = 1
+        end
+        if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+            base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+        end
+    elseif i == max
+        if hinn == 0 && game_stats["GameLog"]["A_R"] < game_stats["GameLog"]["Away Score"]
+            display("MISSING AWAY RUN")
+        elseif hinn == 1 && game_stats["GameLog"]["H_R"] < game_stats["GameLog"]["Home Score"]
+            display("MISSING HOME RUN")
+        elseif (Events[i]["Outs"] == 2 && Events[i]["Num Outs During Play"] == 1) || (Events[i]["Outs"] == 1 && Events[i]["Num Outs During Play"] == 2) || (Events[i]["Outs"] == 0 && Events[i]["Num Outs During Play"] == 3)
+        else
+            display(path)
+        end
+        #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
+    else  
+        if Events[i]["Runner Batter"]["Runner Result Base"] == 4 && hinn == 0 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+            game_stats[USER][batter]["O_Stats"]["R"] += 1
+        elseif Events[i]["Runner Batter"]["Runner Result Base"] == 4 && hinn == 1 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+            game_stats[USER][batter]["O_Stats"]["R"] += 1
+        end
+        if haskey(Events[i],"Runner 1B") && hinn == 0&& Events[i]["Runner 1B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
+            AB["1B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+            game_stats[USER][Events[i]["Runner 1B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        elseif haskey(Events[i],"Runner 1B") && hinn == 1 && Events[i]["Runner 1B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
+            AB["1B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+            game_stats[USER][Events[i]["Runner 1B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        end
+        if haskey(Events[i],"Runner 2B") && hinn == 0&& Events[i]["Runner 2B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
+            AB["2B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+            game_stats[USER][Events[i]["Runner 2B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        elseif haskey(Events[i],"Runner 2B") && hinn == 1 && Events[i]["Runner 2B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
+            AB["2B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+            game_stats[USER][Events[i]["Runner 2B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        end
+        if haskey(Events[i],"Runner 3B") && hinn == 0 && Events[i]["Runner 3B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
+            AB["3B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+            game_stats[USER][Events[i]["Runner 3B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        elseif haskey(Events[i],"Runner 3B") && hinn == 1 && Events[i]["Runner 3B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
+            AB["3B"] = 1
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+            game_stats[USER][Events[i]["Runner 3B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
+        end
+    end
+    AB["RBI"] = Events[i]["RBI"]
+    AB["PErg"] = Throw["Erg"]
+    AB["Chem Links"] = Throw["Chem Links"]
+    AB["Balls"] = Events[i]["Balls"]
+    AB["Strikes"] = Events[i]["Strikes"]
+    if haskey(Events[i]["Pitch"],"Contact") #Checks to make sure we made contact 
+        contact = Events[i]["Pitch"]["Contact"]
+        AB["Contact"] = 1
+        AB["Type"] = contact["Type of Contact"]
+        AB["Ball Power"] = contact["Ball Power"]
+        AB["Vert Angle"] = contact["Vert Angle"]
+        AB["Horiz Angle"] = contact["Horiz Angle"]
+        for coord in ["X","Y","X"]
+            AB["velo $coord"] = contact["Ball Velocity - $coord"]
+            AB["Landing $coord"] = contact["Ball Landing Position - $coord"]
+        end
+        AB["Con X"] = contact["Ball Contact Pos - X"]
+        AB["Con Z"] = contact["Ball Contact Pos - Z"]
+        AB["Frame"] = contact["Frame of Swing Upon Contact"]
+        AB["Hang"] = contact["Ball Hang Time"]
+        AB["Height"] = contact["Ball Max Height"]
+        AB["Quality"] = contact["Contact Quality"]
+        AB["CAbs"] = contact["Contact Absolute"]
+        AB["Result"] = contact["Contact Result - Primary"]
+        AB["Charge up"] = contact["Charge Power Up"]
+        AB["Charge Down"] = contact["Charge Power Down"]
+        AB["SSFS"] = contact["Star Swing Five-Star"]
+    else #no contact? we return false to save room within the files
+        AB["Contact"] = 0
+    end
+    return AB,game_stats
+end
+
+
+#get_json("Gobster9",P2="TubbaBlubba")
+Collect_Stats("JSON_files/TEST","TubbaBlubba")
+display("Done")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# function get_AB_pitch(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString,Team::AbstractString)
+#     #function to get all at bats abd balls pitched by the team
+#     Events = game_dict["Events"]
+#     #makes dict's to stroe data
+#     for i in keys(Events) #run through all events
+#         AB = Dict{AbstractString,Any}()
+#         Throw = Dict{AbstractString,Any}()
+#         if haskey(Events[i],"Pitch")#if a ball was pitched, get its info
+#             batter = Events[i]["Runner Batter"]["Runner Char Id"]
+#             pitcher = Events[i]["Pitch"]["Pitcher Char Id"]
+#             if Events[i]["Half Inning"] == "0"
+#                 for char in 0:8
+#                     if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == pitcher
+#                         Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+#                         AB["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+#                     end
+#                     if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
+#                         AB["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+#                         Throw["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+#                     end
+#                 end
+#             else
+#                 for char in 0:8
+#                     if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == batter
+#                         Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+#                         AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
+#                     end
+#                     if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
+#                         Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+#                         AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
+#                     end
+#                 end
+#             end
+#             Throw["PT"] = Events[i]["Pitch"]["Pitch Type"]
+#             Throw["CT"] = Events[i]["Pitch"]["Charge Type"]
+#             Throw["ST"] = Events[i]["Pitch"]["Star Pitch"]
+#             Throw["BC-X"] = Events[i]["Pitch"]["Bat Contact Pos - X"]
+#             Throw["BC-Z"] = Events[i]["Pitch"]["Bat Contact Pos - Z"]
+#             Throw["PS"] = Events[i]["Pitch"]["Pitch Speed"]
+#             Throw["Erg"] = Events[i]["Pitcher Stamina"]
+#             Throw["K"] = Events[i]["Pitch"]["In Strikezone"]
+#             Throw["Chem Links"] = Events[i]["Chemistry Links on Base"]
+#             Throw["Pos"] = Events[i]["Pitch"]["Ball Position - Strikezone"]
+#             Throw["Swing Type"] = Events[i]["Pitch"]["Type of Swing"]
+#             Throw["Batter"] = batter
+#             #appends data to the pitchers log
+#             key = length(Pitcher_Throws[pitcher]) +1
+#             Pitcher_Throws[pitcher][key] = Throw
+#             if Events[i]["Result of AB"] != "None" #since Ab's can only result of pitched balls we now check to make sure we swung or not
+#                 AB["Result"] = Events[i]["Result of AB"]
+#                 if AB["Result"] in ["Single","Double","Triple","HR"]
+#                     AB["Hit"] =1
+#                 else
+#                     AB["Hit"] = 0
+#                 end
+#                 AB["Pitcher"] = pitcher
+#                 if haskey(Events[i],"Runner 2B") || haskey(Events[i],"Runner 3B") #check if RISP was present or not 
+#                     AB["RISP"] = 1
+#                 else
+#                     AB["RISP"] = 0
+#                 end
+#                 AB["RBI"] = Events[i]["RBI"]
+#                 AB["PErg"] = Throw["Erg"]
+#                 AB["Chem Links"] = Throw["Chem Links"]
+#                 AB["Balls"] = Events[i]["Balls"]
+#                 AB["Strikes"] = Events[i]["Strikes"]
+#                 if haskey(Events[i]["Pitch"],"Contact") #Checks to make sure we made contact 
+#                     contact = Events[i]["Pitch"]["Contact"]
+#                     AB["Contact"] = 1
+#                     AB["Type"] = contact["Type of Contact"]
+#                     AB["Ball Power"] = contact["Ball Power"]
+#                     AB["Vert Angle"] = contact["Vert Angle"]
+#                     AB["Horiz Angle"] = contact["Horiz Angle"]
+#                     for coord in ["X","Y","X"]
+#                         AB["velo $coord"] = contact["Ball Velocity - $coord"]
+#                         AB["Landing $coord"] = contact["Ball Landing Position - $coord"]
+#                     end
+#                     AB["Con X"] = contact["Ball Contact Pos - X"]
+#                     AB["Con Z"] = contact["Ball Contact Pos - Z"]
+#                     AB["Frame"] = contact["Frame of Swing Upon Contact"]
+#                     AB["Hang"] = contact["Ball Hang Time"]
+#                     AB["Height"] = contact["Ball Max Height"]
+#                     AB["Quality"] = contact["Contact Quality"]
+#                     AB["CAbs"] = contact["Contact Absolute"]
+#                     AB["Result"] = contact["Contact Result - Primary"]
+#                     AB["Charge up"] = contact["Charge Power Up"]
+#                     AB["Charge Down"] = contact["Charge Power Down"]
+#                     AB["SSFS"] = contact["Star Swing Five-Star"]
+#                 else #no contact? we return false to save room within the files
+#                     AB["Contact"] = 0
+#                 end
+#                 #appends data to the batters log
+#             key = length(Batter_ABS[batter]) +1
+#             Batter_ABS[batter][key] = AB
+#             end
+#         end
+#         AB = 0
+#         Throw = 0
+#     end
+#     return Batter_ABS,Pitcher_Throws
+# end
+
+# function get_AB_pitch_test(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,stat_file::AbstractString,RIO_ID::AbstractString)
+#     #Checks if player was Home or Away
+#     json_dict = JSON3.parsefile(stat_file)
+#     Home_Player = json_dict["Home Player"]
+#     if Home_Player == RIO_ID
+#         get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Home")
+#     else
+#         get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Away")
+#     end
+# end
+
+
+# function JSON_to_dict(stat_file::AbstractString)
+
+#     #JSON file for game in form of dictionary
+#     json_dict = JSON3.parsefile(stat_file)
+
+#     return json_dict
+# end
