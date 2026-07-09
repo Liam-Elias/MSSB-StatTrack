@@ -1,14 +1,17 @@
 using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools,NativeFileDialog,Dates
 
-const names = ["Total","Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+const names = ["Shy Guy", "Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad","Total","Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
 const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R","SH","GP"]
 
-const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP"]
+const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP","IP"]
 
 const D_stats_name = ["PO","OutsPP","BF","GP","INN"]
 
+const T_stats_name = ["W","L","D","Pct","GP"]
+
 const Positions = ["P","C","1B","2B","3B","SS","LF","RF","CF"]
+
 
 function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing, CPU = false)
 
@@ -466,31 +469,31 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
         end
     end
     #Averages like character stats. first adds the to the team
-    for char in ["Shy Guy", "Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad"]
-        User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
-        for SuperS in 0:1
-        User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
-            for key in ["O_Stats","D_Stats"]
-                User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
-            end
-            for stat in O_stats_name
-                User_stats[char][SuperS]["O_Stats"][stat] = 0
-            end
-            User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
-            for pos in Positions
-                User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
-                if pos == "P"
-                    for stat in P_stats_name
-                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-                    end
-                else
-                    for stat in D_stats_name
-                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-                    end
-                end
-            end
-        end
-    end
+    # for char in ["Shy Guy", "Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad"]
+    #     User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+    #     for SuperS in 0:1
+    #     User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
+    #         for key in ["O_Stats","D_Stats"]
+    #             User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
+    #         end
+    #         for stat in O_stats_name
+    #             User_stats[char][SuperS]["O_Stats"][stat] = 0
+    #         end
+    #         User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
+    #         for pos in Positions
+    #             User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+    #             if pos == "P"
+    #                 for stat in P_stats_name
+    #                     User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+    #                 end
+    #             else
+    #                 for stat in D_stats_name
+    #                     User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
     for char in ["Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)"]
         for SuperS in 0:1
             User_stats = Add_self_stats(User_stats,char,SuperS,"Shy Guy")
@@ -603,7 +606,7 @@ function calc_stats(User_stats::AbstractDict,char::AbstractString)
 
         for pos in Positions
             if pos == "P"
-                OutsPP = pop!(D_stats[pos],"OutsPP")
+                OutsPP = D_stats[pos]["OutsPP"]
                 User_stats[char][key]["D_Stats"][pos]["IP"] = div(OutsPP,3) + (OutsPP%3)/10
                 #Calulates pitching stats so long as IP is not zero
                 if User_stats[char][key]["D_Stats"][pos]["IP"] != 0
@@ -620,7 +623,7 @@ function calc_stats(User_stats::AbstractDict,char::AbstractString)
                     User_stats[char][key]["D_Stats"][pos]["DICE"] = 0
                 end
             else
-                OutsPP = pop!(D_stats[pos],"OutsPP")
+                OutsPP = D_stats[pos]["OutsPP"]
                 User_stats[char][key]["D_Stats"][pos]["INN"] = div(OutsPP,3) + (OutsPP%3)/10
             end
         end
@@ -630,9 +633,74 @@ end
 
 function Collect_Stats(Path::AbstractString,RIO_ID::AbstractString,)
     #Collects all stats for a given RIO_ID and exports them into Json files
-    User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
     if !isdir("Stats/$RIO_ID")
-        mkpath("Stats/$RIO_ID") 
+        mkpath("Stats/$RIO_ID")
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
+    elseif isfile("Stats/$RIO_ID/Team_stats.json") && isfile("Stats/$RIO_ID/GameLogs.json") && isfile("Stats/$RIO_ID/Batting_data.json") && isfile("Stats/$RIO_ID/Pitch_data.json") && filesize("Stats/$RIO_ID/Team_stats.json") != 0 && filesize("Stats/$RIO_ID/GameLogs.json") != 0 && filesize("Stats/$RIO_ID/Batting_data.json") != 0 && filesize("Stats/$RIO_ID/Pitch_data.json") != 0 
+        User_stats_read = JSON3.parsefile("Stats/$RIO_ID/Team_stats.json")
+        GameLog_read = JSON3.parsefile("Stats/$RIO_ID/GameLogs.json")
+        Batter_ABS_read = JSON3.parsefile("Stats/$RIO_ID/Batting_data.json")
+        Pitcher_Throws_read = JSON3.parsefile("Stats/$RIO_ID/Pitch_data.json")
+        GameLog_old = Dict{AbstractString,Any}()
+        User_stats_old = Dict{AbstractString,Any}()
+        Batter_ABS_old = Dict{AbstractString,Any}()
+        Pitcher_Throws_old = Dict{AbstractString,Any}()
+        for name in names
+            User_stats_old[name] = Dict{Int64,Any}()
+            for SuperS in 0:1
+                User_stats_old[name][SuperS] = Dict{AbstractString,Any}()
+                User_stats_old[name][SuperS]["O_Stats"] = Dict{AbstractString,Any}()
+                User_stats_old[name][SuperS]["D_Stats"] = Dict{AbstractString,Any}()
+                for stat in O_stats_name
+                    User_stats_old[name][SuperS]["O_Stats"][stat] = User_stats_read[name][SuperS]["O_Stats"][stat] 
+                end
+                User_stats_old[name][SuperS]["D_Stats"]["BigPlays"] = User_stats_read[name][SuperS]["D_Stats"]["BigPlays"]
+                for pos in Positions
+                    User_stats_old[name][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+                    if pos == "P"
+                        for stat in P_stats_name
+                            User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
+                        end
+                    else 
+                        for stat in D_stats_name
+                            User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
+                        end
+                    end
+                end
+            end
+        end
+        User_stats_old["Team"] = Dict{AbstractString,Any}()
+        for stat in T_stats_name
+            User_stats_old["Team"][stat] = User_stats_read["Team"][stat]
+        end
+        for key in keys(GameLog_read)
+            GameLog_old[string(key)] = Dict{AbstractString,Any}()
+            for i in keys(GameLog_read[string(key)])
+                GameLog_old[string(key)][string(i)] = GameLog_read[key][i]
+            end
+        end
+        for name in names
+            Batter_ABS_old[name] = Dict{Int64,Any}()
+            if !isempty(Batter_ABS_read[name])
+                for i in 1:length(Batter_ABS_read[name])
+                    Batter_ABS_old[name][i] = Batter_ABS_read[name][i]
+                end
+            end
+        end
+        for name in names
+            Pitcher_Throws_old[name] = Dict{Int64,Any}()
+            if !isempty(Pitcher_Throws_read[name])
+                for i in 1:length(Pitcher_Throws_read[name])
+                    Pitcher_Throws_old[name][i] = Pitcher_Throws_read[name][i]
+                end
+            end
+        end
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = append_games(Path,RIO_ID,User_stats_old,GameLog_old,Batter_ABS_old,Pitcher_Throws_old)
+        rm("Stats/$RIO_ID/GameLogs.json")
+        rm("Stats/$RIO_ID/Batting_data.json")
+        rm("Stats/$RIO_ID/Pitch_data.json")
+    else
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
     end
     open("Stats/$RIO_ID/Team_stats.json","w") do file
         JSON3.pretty(file,User_stats)
@@ -915,12 +983,196 @@ function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::Abs
 end
 
 
+function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::AbstractDict,GameLog::AbstractDict,Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict)
+
+    #Makes a empth dict for all characters and all stats to be filled in later
+    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
+    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
+    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
+    function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::AbstractString,SuperS::Int64,alt_char::AbstractString=char)
+        for stat in O_stats_name
+            User_stats[alt_char][SuperS]["O_Stats"][stat] += game_dict[char]["O_Stats"][stat]
+        end
+        for pos in keys(game_dict[char]["D_Stats"])
+            if pos == "P"
+                for stat in P_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
+                end
+            elseif pos == "BigPlays"
+                User_stats[alt_char][SuperS]["D_Stats"][pos] += game_dict[char]["D_Stats"][pos]
+            else
+                for stat in D_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
+                end
+            end
+        end
+        return User_stats
+    end
+
+    function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
+        #adds played games to the game log indexed by date and time
+        # Date = game_stats["GameLog"]["Date"]
+        # Time = game_stats["GameLog"]["Start Time"]
+        # key = Date*" "*Time
+        GameLog[game] = Dict{AbstractString,Any}()
+        GameLog[game] = game_stats
+        return GameLog
+    end
+
+    function Add_self_stats(User_stats::AbstractDict,char::AbstractString,SuperS::Int64,alt_char::AbstractString=char)
+        for stat in O_stats_name
+            User_stats[alt_char][SuperS]["O_Stats"][stat] += User_stats[char][SuperS]["O_Stats"][stat]
+        end
+        for pos in keys(User_stats[char][SuperS]["D_Stats"])
+            if pos == "P"
+                for stat in P_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
+                end
+            elseif pos == "BigPlays"
+                User_stats[alt_char][SuperS]["D_Stats"][pos] += User_stats[char][SuperS]["D_Stats"][pos]
+            else
+                for stat in D_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
+                end
+            end
+        end
+        return User_stats
+    end
+    old_tip = User_stats["Total"][0]["D_Stats"]["P"]["IP"]
+    TIP = (old_tip - round(old_tip))*10 + 3*round(old_tip)
+    for game in readdir(Path)
+        if contains(game, "decoded") && contains(game, ".json")
+            src_path = joinpath(Path,game)
+            game_stats,game_dict = single_game_stats(src_path,RIO_ID)
+            #Skips game if RIO_ID did not participate in the game
+            if game_stats == 0
+                continue
+            elseif game in keys(GameLog)
+                display("Game already in log, skipping: $game")
+                continue
+            elseif game_dict["Events"][1]["Inning"] != 1
+                continue
+            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
+                continue
+            else 
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
+                User_stats["Team"]["GP"] += 1
+                if game_stats["GameLog"]["Home Player"] == RIO_ID
+                    if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                else
+                    if game_stats["GameLog"]["Home Score"] < game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                end
+                #Appends stats from game_stats to User_stats
+                RIO_stats = game_stats[RIO_ID]
+                for char in keys(RIO_stats)
+                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
+                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
+                end
+            end
+            GameLog = add_game(GameLog,game_stats,game)
+            TIP += IPPG
+        end
+    end
+    #Averages like character stats. first adds the to the team
+    for char in ["Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Shy Guy")
+        end
+    end
+    for char in ["Noki(R)","Noki(G)","Noki(B)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Noki")
+        end
+    end
+    for char in ["Pianta(B)","Pianta(R)","Pianta(Y)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Pianta")
+        end
+    end
+    for char in ["Koopa(R)","Koopa(G)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Koopa")
+        end
+    end
+    for char in ["Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Dry Bones")
+        end
+    end
+    for char in ["Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Magikoopa")
+        end
+    end
+    for char in ["Paratroopa(R)","Paratroopa(G)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Paratroopa")
+        end
+    end
+    for char in ["Bro(F)","Bro(B)","Bro(H)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Bro")
+        end
+    end
+    for char in ["Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Toad")
+        end
+    end
+    for char in names
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
+        end
+    end
+    INN = 0
+    for key in keys(GameLog)
+        INN += GameLog[key]["GameLog"]["GL"]
+    end
+    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
+    for char in keys(User_stats)
+        if char == "Team"
+            continue
+        else    
+            User_stats = calc_stats(User_stats,char)
+        end
+    end
+    if User_stats["Team"]["GP"] != 0
+        User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
+    else
+        User_stats["Team"]["Pct"] = 0
+    end
+    for SS in 0:1
+        User_stats["Total"][SS]["O_Stats"]["GP"] = User_stats["Team"]["GP"]
+        for pos in Positions
+            if pos == "P"
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["IP"] = div(TIP,3) + (TIP%3)/10
+            else
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["INN"] = INN
+            end
+        end
+    end
+    #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
+    return User_stats,GameLog,Batter_ABS,Pitcher_Throws
+end
+
+
 #get_json("Gobster9",P2="TubbaBlubba")
 Collect_Stats("JSON_files/TEST","TubbaBlubba")
 display("Done")
-
-
-
 
 
 
