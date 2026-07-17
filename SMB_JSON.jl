@@ -74,22 +74,273 @@ function get_json(P1::AbstractString;  P2::Union{AbstractString,Nothing}=nothing
     end
 end
 
-function single_game_stats(stat_file::AbstractString,RIO_ID::AbstractString,)
-
-    #JSON file for game in form of dictionary
-    json_dict = JSON3.parsefile(stat_file)
-    Home_Player = json_dict["Home Player"]
-    Away_Player = json_dict["Away Player"]
-    if isequal_normalized(Home_Player,RIO_ID,casefold=true)
-        game = get_game_stats(json_dict)
-        return game,json_dict
-    elseif isequal_normalized(Away_Player,RIO_ID,casefold=true)
-        game = get_game_stats(json_dict)
-        return game,json_dict
+function Collect_Stats(Path::AbstractString,RIO_ID::AbstractString,)
+    #Collects all stats for a given RIO_ID and exports them into Json files
+    gameset = split(Path,"/")[2]
+    path = "Stats/"*gameset*"/$RIO_ID"
+    if !isdir(path)
+        mkpath(path)
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
+    elseif isfile(path*"/Team_stats.json") && isfile(path*"/GameLogs.json") && isfile(path*"/Batting_data.json") && isfile(path*"/Pitch_data.json") && filesize(path*"/Team_stats.json") != 0 && filesize(path*"/GameLogs.json") != 0 && filesize(path*"/Batting_data.json") != 0 && filesize(path*"/Pitch_data.json") != 0 
+        User_stats_read = JSON3.parsefile(path*"/Team_stats.json")
+        GameLog_read = JSON3.parsefile(path*"/GameLogs.json")
+        Batter_ABS_read = JSON3.parsefile(path*"/Batting_data.json")
+        Pitcher_Throws_read = JSON3.parsefile(path*"/Pitch_data.json")
+        User_stats_old,GameLog_old,Batter_ABS_old,Pitcher_Throws_old = Remake_dicts(User_stats_read,GameLog_read,Batter_ABS_read,Pitcher_Throws_read)
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = append_games(Path,RIO_ID,User_stats_old,GameLog_old,Batter_ABS_old,Pitcher_Throws_old)
+        rm(path*"/GameLogs.json")
+        rm(path*"/Batting_data.json")
+        rm(path*"/Pitch_data.json")
     else
-        return 0,json_dict
+        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
     end
+    open(path*"/Team_stats.json","w") do file
+        JSON3.pretty(file,User_stats)
+    end
+    open(path*"/GameLogs.json","w") do file
+        JSON3.pretty(file,GameLog)
+    end
+    open(path*"/Batting_data.json","w") do file
+        JSON3.pretty(file,Batter_ABS)
+    end
+    open(path*"/Pitch_data.json","w") do file
+        JSON3.pretty(file,Pitcher_Throws)
+    end
+    return User_stats,GameLog,Batter_ABS,Pitcher_Throws
 end
+
+function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
+
+    #Makes a empth dict for all characters and all stats to be filled in later
+    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
+    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
+    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
+    User_stats = Dict{AbstractString,Any}()
+    User_stats["Team"] = Dict{AbstractString,Any}()
+    for stat in ["GP","W","L","D","Pct"]
+        User_stats["Team"][stat] = 0
+    end
+    for char in names
+        User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+        for SuperS in 0:1
+        User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
+            for key in ["O_Stats","D_Stats"]
+                User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
+            end
+            for stat in O_stats_name
+                User_stats[char][SuperS]["O_Stats"][stat] = 0
+            end
+            User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
+            for pos in Positions
+                User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+                if pos == "P"
+                    for stat in P_stats_name
+                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+                    end
+                else
+                    for stat in D_stats_name
+                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
+                    end
+                end
+            end
+        end
+    end
+    #Iteratre through all games with given RIO_ID
+    GameLog = Dict{AbstractString,Any}()
+    Batter_ABS = Dict{AbstractString,Dict{Int,Any}}()
+    Pitcher_Throws = Dict{AbstractString,Dict{Int,Any}}()
+    for name in names
+        Batter_ABS[name] = Dict{Int,Any}()
+        Pitcher_Throws[name] = Dict{Int,Any}()
+    end
+    TIP = 0.0
+    for game in readdir(Path)
+        if contains(game, "decoded") && contains(game, ".json") && contains(lowercase(game), lowercase(RIO_ID))
+            src_path = joinpath(Path,game)
+            game_dict = JSON3.parsefile(src_path)
+            game_stats = get_game_stats(game_dict)
+            #Skips game if RIO_ID did not participate in the game
+            if game_stats == 0
+                continue
+            elseif game_dict["Events"][1]["Inning"] != 1
+                continue
+            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
+                continue
+            else 
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
+                User_stats["Team"]["GP"] += 1
+                if game_stats["GameLog"]["Home Player"] == RIO_ID
+                    if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                else
+                    if game_stats["GameLog"]["Home Score"] < game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                end
+                #Appends stats from game_stats to User_stats
+                RIO_stats = game_stats[RIO_ID]
+                for char in keys(RIO_stats)
+                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
+                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
+                end
+            end
+            GameLog = add_game(GameLog,game_stats,game)
+            TIP += IPPG
+        end
+    end
+    #Averages like character stats
+    User_stats = average_like_char(User_stats)
+    INN = 0
+    for key in keys(GameLog)
+        INN += GameLog[key]["GameLog"]["GL"]
+    end
+    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
+    User_stats = Calc_total_stats(User_stats,TIP,INN)
+    #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
+    return User_stats,GameLog,Batter_ABS,Pitcher_Throws
+end
+
+function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::AbstractString,SuperS::Int,alt_char::AbstractString=char)
+    for stat in O_stats_name
+        User_stats[alt_char][SuperS]["O_Stats"][stat] += game_dict[char]["O_Stats"][stat]
+    end
+    for pos in keys(game_dict[char]["D_Stats"])
+        if pos == "P"
+            for stat in P_stats_name
+                User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
+            end
+        elseif pos == "BigPlays"
+            User_stats[alt_char][SuperS]["D_Stats"][pos] += game_dict[char]["D_Stats"][pos]
+        else
+            for stat in D_stats_name
+                User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
+            end
+        end
+    end
+    return User_stats
+end
+
+function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
+    #adds played games to the game log indexed by date and time
+    # Date = game_stats["GameLog"]["Date"]
+    # Time = game_stats["GameLog"]["Start Time"]
+    # key = Date*" "*Time
+    GameLog[game] = Dict{AbstractString,Any}()
+    GameLog[game] = game_stats
+    return GameLog
+end
+
+function average_like_char(User_stats::AbstractDict)
+    function Add_self_stats(User_stats::AbstractDict,char::AbstractString,SuperS::Int,alt_char::AbstractString=char)
+        for stat in O_stats_name
+            User_stats[alt_char][SuperS]["O_Stats"][stat] += User_stats[char][SuperS]["O_Stats"][stat]
+        end
+        for pos in keys(User_stats[char][SuperS]["D_Stats"])
+            if pos == "P"
+                for stat in P_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
+                end
+            elseif pos == "BigPlays"
+                User_stats[alt_char][SuperS]["D_Stats"][pos] += User_stats[char][SuperS]["D_Stats"][pos]
+            else
+                for stat in D_stats_name
+                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
+                end
+            end
+        end
+        return User_stats
+    end
+
+    for char in ["Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Shy Guy")
+        end
+    end
+    for char in ["Noki(R)","Noki(G)","Noki(B)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Noki")
+        end
+    end
+    for char in ["Pianta(B)","Pianta(R)","Pianta(Y)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Pianta")
+        end
+    end
+    for char in ["Koopa(R)","Koopa(G)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Koopa")
+        end
+    end
+    for char in ["Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Dry Bones")
+        end
+    end
+    for char in ["Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Magikoopa")
+        end
+    end
+    for char in ["Paratroopa(R)","Paratroopa(G)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Paratroopa")
+        end
+    end
+    for char in ["Bro(F)","Bro(B)","Bro(H)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Bro")
+        end
+    end
+    for char in ["Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Toad")
+        end
+    end
+    for char in names
+        for SuperS in 0:1
+            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
+        end
+    end
+    return User_stats
+end
+
+function Calc_total_stats(User_stats::AbstractDict,TIP::Float64,INN::Int64)
+    for char in keys(User_stats)
+        if char == "Team"
+            continue
+        else    
+            User_stats = calc_stats(User_stats,char)
+        end
+    end
+    if User_stats["Team"]["GP"] != 0
+        User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
+    else
+        User_stats["Team"]["Pct"] = 0
+    end
+    for SS in 0:1
+        User_stats["Total"][SS]["O_Stats"]["GP"] = User_stats["Team"]["GP"]
+        for pos in Positions
+            if pos == "P"
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["IP"] = div(TIP,3) + (TIP%3)/10
+            else
+                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
+                User_stats["Total"][SS]["D_Stats"][pos]["INN"] = INN
+            end
+        end
+    end
+    return User_stats
+end
+
 
 function get_game_stats(json_dict::AbstractDict)
     #Gets all stats for a single game separated by defensive stats and offensive stats for a given game, returns a dict with all characters and their stats
@@ -97,6 +348,13 @@ function get_game_stats(json_dict::AbstractDict)
     Game_stats["GameLog"] = Dict{AbstractString,Any}()
     Game_stats[json_dict["Home Player"]] = Dict{AbstractString,Any}()
     for team in ["Home","Away"]
+        Players = []
+        for i in 0:8
+            push!(Players,json_dict["Character Game Stats"]["$team Roster $i"]["CharID"])
+        end
+        if !allunique(Players)
+            return 0
+        end
         player = json_dict["$team Player"]
         Game_stats[player] = Dict{AbstractString,Any}()
         Off_dict = get_offensive_stats(json_dict,team)
@@ -111,39 +369,6 @@ function get_game_stats(json_dict::AbstractDict)
     Game_stats["GameLog"] = Gen_stats
     return Game_stats
 end
-
-function get_gen_stats(json_dict::AbstractDict)
-    #Gets general game stats such as date,stadium,time,score,winner,runs per inning
-    game_stats = Dict{AbstractString,Any}()
-    game_stats["Stadium"] =json_dict["StadiumID"]
-    DateS = split(json_dict["Date - Start"])
-    Time_start = Time(DateS[4])
-    Time_end = Time(split(json_dict["Date - End"])[4])
-    M = Dates.month(Date(DateS[2], DateFormat("u")))
-    Y = parse(Int,DateS[5])
-    D = parse(Int,DateS[3])
-    #Puts date and time into strings of the form Y/M/D and H:M:S
-    game_stats["Date"] = string(Date(Y,M,D))
-    game_stats["Start Time"] = string(Time_start)
-    game_stats["Time"] = string(Time(Time_end-Time_start))
-    game_stats["GL"] = json_dict["Innings Selected"]
-    game_stats["IP"] = json_dict["Innings Played"]
-    game_stats["H_R"] = 0
-    game_stats["A_R"] = 0
-    #Box score counts runs gotten per inning
-    game_stats["BoxScore"] = Dict{Int,Dict{AbstractString,Any}}()
-    for inn in 1:game_stats["IP"]
-        game_stats["BoxScore"][inn] = Dict{AbstractString,Any}()
-        game_stats["BoxScore"][inn]["H"] = 0
-        game_stats["BoxScore"][inn]["A"] = 0
-    end
-    for team in ["Home","Away"]
-        game_stats["$team Score"] = json_dict["$team Score"]
-        game_stats["$team Player"] = json_dict["$team Player"]
-        game_stats["$team H"] = 0
-    end
-    return game_stats
-end 
 
 function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
 
@@ -308,274 +533,38 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
     return Stats_dict
 end
 
-function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
-
-    #Makes a empth dict for all characters and all stats to be filled in later
-    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
-    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
-    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
-    User_stats = Dict{AbstractString,Any}()
-    User_stats["Team"] = Dict{AbstractString,Any}()
-    for stat in ["GP","W","L","D","Pct"]
-        User_stats["Team"][stat] = 0
+function get_gen_stats(json_dict::AbstractDict)
+    #Gets general game stats such as date,stadium,time,score,winner,runs per inning
+    game_stats = Dict{AbstractString,Any}()
+    game_stats["Stadium"] =json_dict["StadiumID"]
+    DateS = split(json_dict["Date - Start"])
+    Time_start = Time(DateS[4])
+    Time_end = Time(split(json_dict["Date - End"])[4])
+    M = Dates.month(Date(DateS[2], DateFormat("u")))
+    Y = parse(Int,DateS[5])
+    D = parse(Int,DateS[3])
+    #Puts date and time into strings of the form Y/M/D and H:M:S
+    game_stats["Date"] = string(Date(Y,M,D))
+    game_stats["Start Time"] = string(Time_start)
+    game_stats["Time"] = string(Time(Time_end-Time_start))
+    game_stats["GL"] = json_dict["Innings Selected"]
+    game_stats["IP"] = json_dict["Innings Played"]
+    game_stats["H_R"] = 0
+    game_stats["A_R"] = 0
+    #Box score counts runs gotten per inning
+    game_stats["BoxScore"] = Dict{Int,Dict{AbstractString,Any}}()
+    for inn in 1:game_stats["IP"]
+        game_stats["BoxScore"][inn] = Dict{AbstractString,Any}()
+        game_stats["BoxScore"][inn]["H"] = 0
+        game_stats["BoxScore"][inn]["A"] = 0
     end
-    for char in names
-        User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
-        for SuperS in 0:1
-        User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
-            for key in ["O_Stats","D_Stats"]
-                User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
-            end
-            for stat in O_stats_name
-                User_stats[char][SuperS]["O_Stats"][stat] = 0
-            end
-            User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
-            for pos in Positions
-                User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
-                if pos == "P"
-                    for stat in P_stats_name
-                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-                    end
-                else
-                    for stat in D_stats_name
-                        User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-                    end
-                end
-            end
-        end
+    for team in ["Home","Away"]
+        game_stats["$team Score"] = json_dict["$team Score"]
+        game_stats["$team Player"] = json_dict["$team Player"]
+        game_stats["$team H"] = 0
     end
-    # User_stats["Total"] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
-    # for SuperS in 0:1
-    #     User_stats["Total"][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
-    #     for key in ["O_Stats","D_Stats"]
-    #         User_stats["Total"][SuperS][key] = Dict{AbstractString,Any}()
-    #     end
-    #     for stat in O_stats_name
-    #         User_stats["Total"][SuperS]["O_Stats"][stat] = 0
-    #     end
-    #     User_stats["Total"][SuperS]["D_Stats"]["BigPlays"] = 0
-    #     for pos in Positions
-    #         User_stats["Total"][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
-    #         if pos == "P"
-    #             for stat in P_stats_name
-    #                 User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
-    #             end
-    #         else
-    #             for stat in D_stats_name
-    #                 User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
-    #             end
-    #         end
-    #     end
-    # end
-    function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::AbstractString,SuperS::Int,alt_char::AbstractString=char)
-        for stat in O_stats_name
-            User_stats[alt_char][SuperS]["O_Stats"][stat] += game_dict[char]["O_Stats"][stat]
-        end
-        for pos in keys(game_dict[char]["D_Stats"])
-            if pos == "P"
-                for stat in P_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
-                end
-            elseif pos == "BigPlays"
-                User_stats[alt_char][SuperS]["D_Stats"][pos] += game_dict[char]["D_Stats"][pos]
-            else
-                for stat in D_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
-                end
-            end
-        end
-        return User_stats
-    end
-
-    function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
-        #adds played games to the game log indexed by date and time
-        # Date = game_stats["GameLog"]["Date"]
-        # Time = game_stats["GameLog"]["Start Time"]
-        # key = Date*" "*Time
-        GameLog[game] = Dict{AbstractString,Any}()
-        GameLog[game] = game_stats
-        return GameLog
-    end
-
-    function Add_self_stats(User_stats::AbstractDict,char::AbstractString,SuperS::Int,alt_char::AbstractString=char)
-        for stat in O_stats_name
-            User_stats[alt_char][SuperS]["O_Stats"][stat] += User_stats[char][SuperS]["O_Stats"][stat]
-        end
-        for pos in keys(User_stats[char][SuperS]["D_Stats"])
-            if pos == "P"
-                for stat in P_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
-                end
-            elseif pos == "BigPlays"
-                User_stats[alt_char][SuperS]["D_Stats"][pos] += User_stats[char][SuperS]["D_Stats"][pos]
-            else
-                for stat in D_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
-                end
-            end
-        end
-        return User_stats
-    end
-
-    #Iteratre through all games with given RIO_ID
-    GameLog = Dict{AbstractString,Any}()
-    Batter_ABS = Dict{AbstractString,Dict{Int,Any}}()
-    Pitcher_Throws = Dict{AbstractString,Dict{Int,Any}}()
-    for name in names
-        Batter_ABS[name] = Dict{Int,Any}()
-        Pitcher_Throws[name] = Dict{Int,Any}()
-    end
-    TIP = 0
-    for game in readdir(Path)
-        if contains(game, "decoded") && contains(game, ".json")
-            src_path = joinpath(Path,game)
-            game_stats,game_dict = single_game_stats(src_path,RIO_ID)
-            #Skips game if RIO_ID did not participate in the game
-            if game_stats == 0
-                continue
-            elseif game_dict["Events"][1]["Inning"] != 1
-                continue
-            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
-                continue
-            else 
-                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
-                User_stats["Team"]["GP"] += 1
-                if game_stats["GameLog"]["Home Player"] == RIO_ID
-                    if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["W"] += 1
-                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["D"] += 1
-                    else
-                        User_stats["Team"]["L"] += 1
-                    end
-                else
-                    if game_stats["GameLog"]["Home Score"] < game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["W"] += 1
-                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["D"] += 1
-                    else
-                        User_stats["Team"]["L"] += 1
-                    end
-                end
-                #Appends stats from game_stats to User_stats
-                RIO_stats = game_stats[RIO_ID]
-                for char in keys(RIO_stats)
-                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
-                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
-                end
-            end
-            GameLog = add_game(GameLog,game_stats,game)
-            TIP += IPPG
-        end
-    end
-    #Averages like character stats. first adds the to the team
-    # for char in ["Shy Guy", "Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad"]
-    #     User_stats[char] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
-    #     for SuperS in 0:1
-    #     User_stats[char][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
-    #         for key in ["O_Stats","D_Stats"]
-    #             User_stats[char][SuperS][key] = Dict{AbstractString,Any}()
-    #         end
-    #         for stat in O_stats_name
-    #             User_stats[char][SuperS]["O_Stats"][stat] = 0
-    #         end
-    #         User_stats[char][SuperS]["D_Stats"]["BigPlays"] = 0
-    #         for pos in Positions
-    #             User_stats[char][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
-    #             if pos == "P"
-    #                 for stat in P_stats_name
-    #                     User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-    #                 end
-    #             else
-    #                 for stat in D_stats_name
-    #                     User_stats[char][SuperS]["D_Stats"][pos][stat] = 0
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
-    for char in ["Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Shy Guy")
-        end
-    end
-    for char in ["Noki(R)","Noki(G)","Noki(B)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Noki")
-        end
-    end
-    for char in ["Pianta(B)","Pianta(R)","Pianta(Y)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Pianta")
-        end
-    end
-    for char in ["Koopa(R)","Koopa(G)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Koopa")
-        end
-    end
-    for char in ["Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Dry Bones")
-        end
-    end
-    for char in ["Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Magikoopa")
-        end
-    end
-    for char in ["Paratroopa(R)","Paratroopa(G)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Paratroopa")
-        end
-    end
-    for char in ["Bro(F)","Bro(B)","Bro(H)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Bro")
-        end
-    end
-    for char in ["Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Toad")
-        end
-    end
-    for char in names
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
-        end
-    end
-    INN = 0
-    for key in keys(GameLog)
-        INN += GameLog[key]["GameLog"]["GL"]
-    end
-    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
-    for char in keys(User_stats)
-        if char == "Team"
-            continue
-        else    
-            User_stats = calc_stats(User_stats,char)
-        end
-    end
-    if User_stats["Team"]["GP"] != 0
-        User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
-    else
-        User_stats["Team"]["Pct"] = 0
-    end
-    for SS in 0:1
-        User_stats["Total"][SS]["O_Stats"]["GP"] = User_stats["Team"]["GP"]
-        for pos in Positions
-            if pos == "P"
-                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
-                User_stats["Total"][SS]["D_Stats"][pos]["IP"] = div(TIP,3) + (TIP%3)/10
-            else
-                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
-                User_stats["Total"][SS]["D_Stats"][pos]["INN"] = INN
-            end
-        end
-    end
-    #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
-    return User_stats,GameLog,Batter_ABS,Pitcher_Throws
-end
+    return game_stats
+end 
 
 function calc_stats(User_stats::AbstractDict,char::AbstractString)
     for key in keys(User_stats[char])
@@ -631,91 +620,145 @@ function calc_stats(User_stats::AbstractDict,char::AbstractString)
     return User_stats
 end
 
-function Collect_Stats(Path::AbstractString,RIO_ID::AbstractString,)
-    #Collects all stats for a given RIO_ID and exports them into Json files
-    if !isdir("Stats/$RIO_ID")
-        mkpath("Stats/$RIO_ID")
-        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
-    elseif isfile("Stats/$RIO_ID/Team_stats.json") && isfile("Stats/$RIO_ID/GameLogs.json") && isfile("Stats/$RIO_ID/Batting_data.json") && isfile("Stats/$RIO_ID/Pitch_data.json") && filesize("Stats/$RIO_ID/Team_stats.json") != 0 && filesize("Stats/$RIO_ID/GameLogs.json") != 0 && filesize("Stats/$RIO_ID/Batting_data.json") != 0 && filesize("Stats/$RIO_ID/Pitch_data.json") != 0 
-        User_stats_read = JSON3.parsefile("Stats/$RIO_ID/Team_stats.json")
-        GameLog_read = JSON3.parsefile("Stats/$RIO_ID/GameLogs.json")
-        Batter_ABS_read = JSON3.parsefile("Stats/$RIO_ID/Batting_data.json")
-        Pitcher_Throws_read = JSON3.parsefile("Stats/$RIO_ID/Pitch_data.json")
-        GameLog_old = Dict{AbstractString,Any}()
-        User_stats_old = Dict{AbstractString,Any}()
-        Batter_ABS_old = Dict{AbstractString,Any}()
-        Pitcher_Throws_old = Dict{AbstractString,Any}()
-        for name in names
-            User_stats_old[name] = Dict{Int64,Any}()
-            for SuperS in 0:1
-                User_stats_old[name][SuperS] = Dict{AbstractString,Any}()
-                User_stats_old[name][SuperS]["O_Stats"] = Dict{AbstractString,Any}()
-                User_stats_old[name][SuperS]["D_Stats"] = Dict{AbstractString,Any}()
-                for stat in O_stats_name
-                    User_stats_old[name][SuperS]["O_Stats"][stat] = User_stats_read[name][SuperS]["O_Stats"][stat] 
-                end
-                User_stats_old[name][SuperS]["D_Stats"]["BigPlays"] = User_stats_read[name][SuperS]["D_Stats"]["BigPlays"]
-                for pos in Positions
-                    User_stats_old[name][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
-                    if pos == "P"
-                        for stat in P_stats_name
-                            User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
-                        end
-                    else 
-                        for stat in D_stats_name
-                            User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
-                        end
+
+
+
+
+
+
+
+
+
+
+function Remake_dicts(User_stats_read::AbstractDict,GameLog_read::AbstractDict,Batter_ABS_read::AbstractDict,Pitcher_Throws_read::AbstractDict)
+    #Remakes old dicts from JSON files so we can append data for new games played
+    GameLog_old = Dict{AbstractString,Any}()
+    User_stats_old = Dict{AbstractString,Any}()
+    Batter_ABS_old = Dict{AbstractString,Any}()
+    Pitcher_Throws_old = Dict{AbstractString,Any}()
+    for name in names
+        User_stats_old[name] = Dict{Int64,Any}()
+        for SuperS in 0:1
+            User_stats_old[name][SuperS] = Dict{AbstractString,Any}()
+            User_stats_old[name][SuperS]["O_Stats"] = Dict{AbstractString,Any}()
+            User_stats_old[name][SuperS]["D_Stats"] = Dict{AbstractString,Any}()
+            for stat in O_stats_name
+                User_stats_old[name][SuperS]["O_Stats"][stat] = User_stats_read[name][SuperS]["O_Stats"][stat] 
+            end
+            User_stats_old[name][SuperS]["D_Stats"]["BigPlays"] = User_stats_read[name][SuperS]["D_Stats"]["BigPlays"]
+            for pos in Positions
+                User_stats_old[name][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+                if pos == "P"
+                    for stat in P_stats_name
+                        User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
+                    end
+                else 
+                    for stat in D_stats_name
+                        User_stats_old[name][SuperS]["D_Stats"][pos][stat] = User_stats_read[name][SuperS]["D_Stats"][pos][stat]
                     end
                 end
             end
         end
-        User_stats_old["Team"] = Dict{AbstractString,Any}()
-        for stat in T_stats_name
-            User_stats_old["Team"][stat] = User_stats_read["Team"][stat]
+    end
+    User_stats_old["Team"] = Dict{AbstractString,Any}()
+    for stat in T_stats_name
+        User_stats_old["Team"][stat] = User_stats_read["Team"][stat]
+    end
+    for key in keys(GameLog_read)
+        GameLog_old[string(key)] = Dict{AbstractString,Any}()
+        for i in keys(GameLog_read[string(key)])
+            GameLog_old[string(key)][string(i)] = GameLog_read[key][i]
         end
-        for key in keys(GameLog_read)
-            GameLog_old[string(key)] = Dict{AbstractString,Any}()
-            for i in keys(GameLog_read[string(key)])
-                GameLog_old[string(key)][string(i)] = GameLog_read[key][i]
+    end
+    for name in names
+        Batter_ABS_old[name] = Dict{Int64,Any}()
+        if !isempty(Batter_ABS_read[name])
+            for i in 1:length(Batter_ABS_read[name])
+                Batter_ABS_old[name][i] = Batter_ABS_read[name][i]
             end
         end
-        for name in names
-            Batter_ABS_old[name] = Dict{Int64,Any}()
-            if !isempty(Batter_ABS_read[name])
-                for i in 1:length(Batter_ABS_read[name])
-                    Batter_ABS_old[name][i] = Batter_ABS_read[name][i]
+    end
+    for name in names
+        Pitcher_Throws_old[name] = Dict{Int64,Any}()
+        if !isempty(Pitcher_Throws_read[name])
+            for i in 1:length(Pitcher_Throws_read[name])
+                Pitcher_Throws_old[name][i] = Pitcher_Throws_read[name][i]
+            end
+        end
+    end
+    return User_stats_old,GameLog_old,Batter_ABS_old,Pitcher_Throws_old
+end
+
+function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::AbstractDict,GameLog::AbstractDict,Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict)
+
+    #Makes a empth dict for all characters and all stats to be filled in later
+    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
+    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
+    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
+    old_tip = User_stats["Total"][0]["D_Stats"]["P"]["IP"]
+    TIP = (old_tip - round(old_tip))*10 + 3*round(old_tip)
+    for game in readdir(Path)
+        if contains(game, "decoded") && contains(game, ".json") && contains(lowercase(game), lowercase(RIO_ID))
+            src_path = joinpath(Path,game)
+            game_dict = JSON3.parsefile(src_path)
+            game_stats = get_game_stats(game_dict)
+            if game_stats == 0
+                continue
+            elseif game in keys(GameLog)
+                display("Game already in log, skipping: $game")
+                continue
+            elseif game_dict["Events"][1]["Inning"] != 1
+                continue
+            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
+                continue
+            else 
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
+                User_stats["Team"]["GP"] += 1
+                if game_stats["GameLog"]["Home Player"] == RIO_ID
+                    if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                else
+                    if game_stats["GameLog"]["Home Score"] < game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["W"] += 1
+                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
+                        User_stats["Team"]["D"] += 1
+                    else
+                        User_stats["Team"]["L"] += 1
+                    end
+                end
+                #Appends stats from game_stats to User_stats
+                RIO_stats = game_stats[RIO_ID]
+                for char in keys(RIO_stats)
+                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
+                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
                 end
             end
+            GameLog = add_game(GameLog,game_stats,game)
+            TIP += IPPG
         end
-        for name in names
-            Pitcher_Throws_old[name] = Dict{Int64,Any}()
-            if !isempty(Pitcher_Throws_read[name])
-                for i in 1:length(Pitcher_Throws_read[name])
-                    Pitcher_Throws_old[name][i] = Pitcher_Throws_read[name][i]
-                end
-            end
-        end
-        User_stats,GameLog,Batter_ABS,Pitcher_Throws = append_games(Path,RIO_ID,User_stats_old,GameLog_old,Batter_ABS_old,Pitcher_Throws_old)
-        rm("Stats/$RIO_ID/GameLogs.json")
-        rm("Stats/$RIO_ID/Batting_data.json")
-        rm("Stats/$RIO_ID/Pitch_data.json")
-    else
-        User_stats,GameLog,Batter_ABS,Pitcher_Throws = get_all_games(Path,RIO_ID)
     end
-    open("Stats/$RIO_ID/Team_stats.json","w") do file
-        JSON3.pretty(file,User_stats)
+    #Averages like character stats. first adds the to the team
+    User_stats = average_like_char(User_stats)
+    INN = 0
+    for key in keys(GameLog)
+        INN += GameLog[key]["GameLog"]["GL"]
     end
-    open("Stats/$RIO_ID/GameLogs.json","w") do file
-        JSON3.pretty(file,GameLog)
-    end
-    open("Stats/$RIO_ID/Batting_data.json","w") do file
-        JSON3.pretty(file,Batter_ABS)
-    end
-    open("Stats/$RIO_ID/Pitch_data.json","w") do file
-        JSON3.pretty(file,Pitcher_Throws)
-    end
+    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
+    User_stats = Calc_total_stats(User_stats,TIP,INN)
+    #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
     return User_stats,GameLog,Batter_ABS,Pitcher_Throws
 end
+
+
+
+
+
+
 
 function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_stats::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString)
     #function to get all at bats abd balls pitched by the team
@@ -983,328 +1026,11 @@ function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::Abs
 end
 
 
-function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::AbstractDict,GameLog::AbstractDict,Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict)
 
-    #Makes a empth dict for all characters and all stats to be filled in later
-    #File goes, character name -> superstar state -> Offensive -> stat name -> stat value or 
-    #File goes, character name -> superstar state -> Defensive -> Position -> stat name -> stat value
-    #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
-    function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::AbstractString,SuperS::Int64,alt_char::AbstractString=char)
-        for stat in O_stats_name
-            User_stats[alt_char][SuperS]["O_Stats"][stat] += game_dict[char]["O_Stats"][stat]
-        end
-        for pos in keys(game_dict[char]["D_Stats"])
-            if pos == "P"
-                for stat in P_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
-                end
-            elseif pos == "BigPlays"
-                User_stats[alt_char][SuperS]["D_Stats"][pos] += game_dict[char]["D_Stats"][pos]
-            else
-                for stat in D_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += game_dict[char]["D_Stats"][pos][stat]
-                end
-            end
-        end
-        return User_stats
-    end
 
-    function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
-        #adds played games to the game log indexed by date and time
-        # Date = game_stats["GameLog"]["Date"]
-        # Time = game_stats["GameLog"]["Start Time"]
-        # key = Date*" "*Time
-        GameLog[game] = Dict{AbstractString,Any}()
-        GameLog[game] = game_stats
-        return GameLog
-    end
 
-    function Add_self_stats(User_stats::AbstractDict,char::AbstractString,SuperS::Int64,alt_char::AbstractString=char)
-        for stat in O_stats_name
-            User_stats[alt_char][SuperS]["O_Stats"][stat] += User_stats[char][SuperS]["O_Stats"][stat]
-        end
-        for pos in keys(User_stats[char][SuperS]["D_Stats"])
-            if pos == "P"
-                for stat in P_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
-                end
-            elseif pos == "BigPlays"
-                User_stats[alt_char][SuperS]["D_Stats"][pos] += User_stats[char][SuperS]["D_Stats"][pos]
-            else
-                for stat in D_stats_name
-                    User_stats[alt_char][SuperS]["D_Stats"][pos][stat] += User_stats[char][SuperS]["D_Stats"][pos][stat]
-                end
-            end
-        end
-        return User_stats
-    end
-    old_tip = User_stats["Total"][0]["D_Stats"]["P"]["IP"]
-    TIP = (old_tip - round(old_tip))*10 + 3*round(old_tip)
-    for game in readdir(Path)
-        if contains(game, "decoded") && contains(game, ".json")
-            src_path = joinpath(Path,game)
-            game_stats,game_dict = single_game_stats(src_path,RIO_ID)
-            #Skips game if RIO_ID did not participate in the game
-            if game_stats == 0
-                continue
-            elseif game in keys(GameLog)
-                display("Game already in log, skipping: $game")
-                continue
-            elseif game_dict["Events"][1]["Inning"] != 1
-                continue
-            elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
-                continue
-            else 
-                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
-                User_stats["Team"]["GP"] += 1
-                if game_stats["GameLog"]["Home Player"] == RIO_ID
-                    if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["W"] += 1
-                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["D"] += 1
-                    else
-                        User_stats["Team"]["L"] += 1
-                    end
-                else
-                    if game_stats["GameLog"]["Home Score"] < game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["W"] += 1
-                    elseif game_stats["GameLog"]["Home Score"] == game_stats["GameLog"]["Away Score"]
-                        User_stats["Team"]["D"] += 1
-                    else
-                        User_stats["Team"]["L"] += 1
-                    end
-                end
-                #Appends stats from game_stats to User_stats
-                RIO_stats = game_stats[RIO_ID]
-                for char in keys(RIO_stats)
-                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
-                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
-                end
-            end
-            GameLog = add_game(GameLog,game_stats,game)
-            TIP += IPPG
-        end
-    end
-    #Averages like character stats. first adds the to the team
-    for char in ["Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Shy Guy")
-        end
-    end
-    for char in ["Noki(R)","Noki(G)","Noki(B)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Noki")
-        end
-    end
-    for char in ["Pianta(B)","Pianta(R)","Pianta(Y)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Pianta")
-        end
-    end
-    for char in ["Koopa(R)","Koopa(G)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Koopa")
-        end
-    end
-    for char in ["Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Dry Bones")
-        end
-    end
-    for char in ["Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Magikoopa")
-        end
-    end
-    for char in ["Paratroopa(R)","Paratroopa(G)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Paratroopa")
-        end
-    end
-    for char in ["Bro(F)","Bro(B)","Bro(H)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Bro")
-        end
-    end
-    for char in ["Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Toad")
-        end
-    end
-    for char in names
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
-        end
-    end
-    INN = 0
-    for key in keys(GameLog)
-        INN += GameLog[key]["GameLog"]["GL"]
-    end
-    #Calulates BA, SLG, OBP, OPS for each character and each superstar state
-    for char in keys(User_stats)
-        if char == "Team"
-            continue
-        else    
-            User_stats = calc_stats(User_stats,char)
-        end
-    end
-    if User_stats["Team"]["GP"] != 0
-        User_stats["Team"]["Pct"] = round(User_stats["Team"]["W"]/User_stats["Team"]["GP"],digits=3)
-    else
-        User_stats["Team"]["Pct"] = 0
-    end
-    for SS in 0:1
-        User_stats["Total"][SS]["O_Stats"]["GP"] = User_stats["Team"]["GP"]
-        for pos in Positions
-            if pos == "P"
-                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
-                User_stats["Total"][SS]["D_Stats"][pos]["IP"] = div(TIP,3) + (TIP%3)/10
-            else
-                User_stats["Total"][SS]["D_Stats"][pos]["GP"] = User_stats["Team"]["GP"]
-                User_stats["Total"][SS]["D_Stats"][pos]["INN"] = INN
-            end
-        end
-    end
-    #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
-    return User_stats,GameLog,Batter_ABS,Pitcher_Throws
-end
 
 
 #get_json("Gobster9",P2="TubbaBlubba")
-Collect_Stats("JSON_files/TEST","TubbaBlubba")
+Collect_Stats("JSON_files/Gobster9","Gobster9")
 display("Done")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# function get_AB_pitch(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString,Team::AbstractString)
-#     #function to get all at bats abd balls pitched by the team
-#     Events = game_dict["Events"]
-#     #makes dict's to stroe data
-#     for i in keys(Events) #run through all events
-#         AB = Dict{AbstractString,Any}()
-#         Throw = Dict{AbstractString,Any}()
-#         if haskey(Events[i],"Pitch")#if a ball was pitched, get its info
-#             batter = Events[i]["Runner Batter"]["Runner Char Id"]
-#             pitcher = Events[i]["Pitch"]["Pitcher Char Id"]
-#             if Events[i]["Half Inning"] == "0"
-#                 for char in 0:8
-#                     if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == pitcher
-#                         Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-#                         AB["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-#                     end
-#                     if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
-#                         AB["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-#                         Throw["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-#                     end
-#                 end
-#             else
-#                 for char in 0:8
-#                     if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == batter
-#                         Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-#                         AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-#                     end
-#                     if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
-#                         Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-#                         AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-#                     end
-#                 end
-#             end
-#             Throw["PT"] = Events[i]["Pitch"]["Pitch Type"]
-#             Throw["CT"] = Events[i]["Pitch"]["Charge Type"]
-#             Throw["ST"] = Events[i]["Pitch"]["Star Pitch"]
-#             Throw["BC-X"] = Events[i]["Pitch"]["Bat Contact Pos - X"]
-#             Throw["BC-Z"] = Events[i]["Pitch"]["Bat Contact Pos - Z"]
-#             Throw["PS"] = Events[i]["Pitch"]["Pitch Speed"]
-#             Throw["Erg"] = Events[i]["Pitcher Stamina"]
-#             Throw["K"] = Events[i]["Pitch"]["In Strikezone"]
-#             Throw["Chem Links"] = Events[i]["Chemistry Links on Base"]
-#             Throw["Pos"] = Events[i]["Pitch"]["Ball Position - Strikezone"]
-#             Throw["Swing Type"] = Events[i]["Pitch"]["Type of Swing"]
-#             Throw["Batter"] = batter
-#             #appends data to the pitchers log
-#             key = length(Pitcher_Throws[pitcher]) +1
-#             Pitcher_Throws[pitcher][key] = Throw
-#             if Events[i]["Result of AB"] != "None" #since Ab's can only result of pitched balls we now check to make sure we swung or not
-#                 AB["Result"] = Events[i]["Result of AB"]
-#                 if AB["Result"] in ["Single","Double","Triple","HR"]
-#                     AB["Hit"] =1
-#                 else
-#                     AB["Hit"] = 0
-#                 end
-#                 AB["Pitcher"] = pitcher
-#                 if haskey(Events[i],"Runner 2B") || haskey(Events[i],"Runner 3B") #check if RISP was present or not 
-#                     AB["RISP"] = 1
-#                 else
-#                     AB["RISP"] = 0
-#                 end
-#                 AB["RBI"] = Events[i]["RBI"]
-#                 AB["PErg"] = Throw["Erg"]
-#                 AB["Chem Links"] = Throw["Chem Links"]
-#                 AB["Balls"] = Events[i]["Balls"]
-#                 AB["Strikes"] = Events[i]["Strikes"]
-#                 if haskey(Events[i]["Pitch"],"Contact") #Checks to make sure we made contact 
-#                     contact = Events[i]["Pitch"]["Contact"]
-#                     AB["Contact"] = 1
-#                     AB["Type"] = contact["Type of Contact"]
-#                     AB["Ball Power"] = contact["Ball Power"]
-#                     AB["Vert Angle"] = contact["Vert Angle"]
-#                     AB["Horiz Angle"] = contact["Horiz Angle"]
-#                     for coord in ["X","Y","X"]
-#                         AB["velo $coord"] = contact["Ball Velocity - $coord"]
-#                         AB["Landing $coord"] = contact["Ball Landing Position - $coord"]
-#                     end
-#                     AB["Con X"] = contact["Ball Contact Pos - X"]
-#                     AB["Con Z"] = contact["Ball Contact Pos - Z"]
-#                     AB["Frame"] = contact["Frame of Swing Upon Contact"]
-#                     AB["Hang"] = contact["Ball Hang Time"]
-#                     AB["Height"] = contact["Ball Max Height"]
-#                     AB["Quality"] = contact["Contact Quality"]
-#                     AB["CAbs"] = contact["Contact Absolute"]
-#                     AB["Result"] = contact["Contact Result - Primary"]
-#                     AB["Charge up"] = contact["Charge Power Up"]
-#                     AB["Charge Down"] = contact["Charge Power Down"]
-#                     AB["SSFS"] = contact["Star Swing Five-Star"]
-#                 else #no contact? we return false to save room within the files
-#                     AB["Contact"] = 0
-#                 end
-#                 #appends data to the batters log
-#             key = length(Batter_ABS[batter]) +1
-#             Batter_ABS[batter][key] = AB
-#             end
-#         end
-#         AB = 0
-#         Throw = 0
-#     end
-#     return Batter_ABS,Pitcher_Throws
-# end
-
-# function get_AB_pitch_test(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,stat_file::AbstractString,RIO_ID::AbstractString)
-#     #Checks if player was Home or Away
-#     json_dict = JSON3.parsefile(stat_file)
-#     Home_Player = json_dict["Home Player"]
-#     if Home_Player == RIO_ID
-#         get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Home")
-#     else
-#         get_AB_pitch(Batter_ABS,Pitcher_Throws,json_dict,RIO_ID,"Away")
-#     end
-# end
-
-
-# function JSON_to_dict(stat_file::AbstractString)
-
-#     #JSON file for game in form of dictionary
-#     json_dict = JSON3.parsefile(stat_file)
-
-#     return json_dict
-# end
