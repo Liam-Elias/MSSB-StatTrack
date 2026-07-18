@@ -200,9 +200,20 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
     #Averages like character stats
     User_stats = average_like_char(User_stats)
     INN = 0
+    RIO_ID_runs = 0
+    Alt_runs = 0
     for key in keys(GameLog)
+        if GameLog[key]["GameLog"]["Home Player"] == RIO_ID
+            RIO_ID_runs += GameLog[key]["GameLog"]["Home Score"]
+            Alt_runs += GameLog[key]["GameLog"]["Away Score"]
+        else
+            Alt_runs += GameLog[key]["GameLog"]["Home Score"]
+            RIO_ID_runs += GameLog[key]["GameLog"]["Away Score"]
+        end 
         INN += GameLog[key]["GameLog"]["GL"]
     end
+    Run_diff = RIO_ID_runs - Alt_runs
+    User_stats["Team"]["RD"] = Run_diff
     #Calulates BA, SLG, OBP, OPS for each character and each superstar state
     User_stats = Calc_total_stats(User_stats,TIP,INN)
     #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
@@ -786,9 +797,20 @@ function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::Ab
     #Averages like character stats. first adds the to the team
     User_stats = average_like_char(User_stats)
     INN = 0
+    RIO_ID_runs = 0
+    Alt_runs = 0
     for key in keys(GameLog)
+        if GameLog[key]["GameLog"]["Home Player"] == RIO_ID
+            RIO_ID_runs += GameLog[key]["GameLog"]["Home Score"]
+            Alt_runs += GameLog[key]["GameLog"]["Away Score"]
+        else
+            Alt_runs += GameLog[key]["GameLog"]["Home Score"]
+            RIO_ID_runs += GameLog[key]["GameLog"]["Away Score"]
+        end 
         INN += GameLog[key]["GameLog"]["GL"]
     end
+    Run_diff = RIO_ID_runs - Alt_runs
+    User_stats["Team"]["RD"] = Run_diff
     #Calulates BA, SLG, OBP, OPS for each character and each superstar state
     User_stats = Calc_total_stats(User_stats,TIP,INN)
     #Returns. tuple of the users full stats, log of all games, teams AB's,Pitchers throws
