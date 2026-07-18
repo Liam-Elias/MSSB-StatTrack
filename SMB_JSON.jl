@@ -573,47 +573,88 @@ function calc_stats(User_stats::AbstractDict,char::AbstractString)
         #Skips if no AB to avoid division by zero, but still calculates OBP if there are BB, HBP, or SF
         if O_stats["AB"] != 0
 
-        User_stats[char][key]["O_Stats"]["BA"] = round(O_stats["H"]/O_stats["AB"],digits=3)
-        User_stats[char][key]["O_Stats"]["SLG"] = round((O_stats["H"] + O_stats["2B"] + 2*O_stats["3B"] + 3*O_stats["HR"])/(O_stats["AB"]),digits=3)
-        User_stats[char][key]["O_Stats"]["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
+        O_stats["BA"] = round(O_stats["H"]/O_stats["AB"],digits=3)
+        O_stats["SLG"] = round((O_stats["H"] + 2*O_stats["2B"] + 3*O_stats["3B"] + 4*O_stats["HR"])/(O_stats["AB"]),digits=3)
+        O_stats["ISO"] = round((O_stats["2B"] + 2*O_stats["3B"] + 3*O_stats["HR"])/(O_stats["AB"]),digits=3)
+        O_stats["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
+        if O_stats["AB"]-O_stats["K"]-O_stats["HR"]+O_stats["SF"] != 0
+            O_stats["BABIP"] = round((O_stats["H"] - O_stats["HR"])/(O_stats["AB"]-O_stats["K"]-O_stats["HR"]+O_stats["SF"]),digits=3)
+        else
+            O_stats["BABIP"] = 0
+        end
+        if O_stats["HR"] != 0 
+            O_stats["AB/HR"] = round(O_stats["AB"]/O_stats["HR"],digits=2)
+        else
+            O_stats["AB/HR"] = 0
+        end
 
         elseif O_stats["AB"] == 0 && ( O_stats["BB"] != 0 || O_stats["HBP"] != 0 || O_stats["SF"] != 0)
                 
-        User_stats[char][key]["O_Stats"]["BA"] = 0
-        User_stats[char][key]["O_Stats"]["SLG"] = 0
-        User_stats[char][key]["O_Stats"]["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
+        O_stats["BA"] = 0
+        O_stats["SLG"] = 0
+        O_stats["ISO"] = 0
+        O_stats["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
+        O_stats["AB/HR"] = 0
+        if O_stats["AB"]-O_stats["K"]-O_stats["HR"]+O_stats["SF"] != 0
+            O_stats["BABIP"] = round((O_stats["H"] - O_stats["HR"])/(O_stats["AB"]-O_stats["K"]-O_stats["HR"]+O_stats["SF"]),digits=3)
+        else
+            O_stats["BABIP"] = 0
+        end
 
         else
 
-        User_stats[char][key]["O_Stats"]["BA"] = 0
-        User_stats[char][key]["O_Stats"]["SLG"] = 0
-        User_stats[char][key]["O_Stats"]["OBP"] = 0
+        O_stats["BA"] = 0
+        O_stats["SLG"] = 0
+        O_stats["ISO"] = 0
+        O_stats["OBP"] = 0
+        O_stats["AB/HR"] = 0
+        O_stats["BABIP"] = 0
 
         end
-
-        User_stats[char][key]["O_Stats"]["OPS"] = round(O_stats["SLG"] + O_stats["OBP"],digits=3)
-
+        if O_stats["K"] != 0
+            O_stats["BB/K"] = round(O_stats["BB"]/O_stats["K"],digits=3)
+        else
+            O_stats["BB/K"] = 0
+        end
+        O_stats["XBH"] = O_stats["2B"]+O_stats["3B"]+O_stats["HR"]
+        O_stats["OPS"] = round(O_stats["SLG"] + O_stats["OBP"],digits=3)
+        if O_stats["PA"] !=0
+            O_stats["BB%"] = round(O_stats["BB"]/O_stats["PA"],digits=3)
+            O_stats["K%"] = round(O_stats["K"]/O_stats["PA"],digits=3)
+        else
+            O_stats["BB%"] = 0
+            O_stats["K%"] = 0
+        end
         for pos in Positions
             if pos == "P"
                 OutsPP = D_stats[pos]["OutsPP"]
-                User_stats[char][key]["D_Stats"][pos]["IP"] = div(OutsPP,3) + (OutsPP%3)/10
+                D_stats[pos]["IP"] = div(OutsPP,3) + (OutsPP%3)/10
                 #Calulates pitching stats so long as IP is not zero
-                if User_stats[char][key]["D_Stats"][pos]["IP"] != 0
-                    User_stats[char][key]["D_Stats"][pos]["WHIP"] = round((D_stats[pos]["BB"] + D_stats[pos]["H"])/D_stats[pos]["IP"],digits=3)
-                    User_stats[char][key]["D_Stats"][pos]["ERA"] = round((D_stats[pos]["ER"]/D_stats[pos]["IP"])*9,digits=3)
-                    User_stats[char][key]["D_Stats"][pos]["K/9"] = round((D_stats[pos]["SO"]/D_stats[pos]["IP"])*9,digits=3)
-                    User_stats[char][key]["D_Stats"][pos]["FIP"] = round(((13*D_stats[pos]["HR"] + 3*D_stats[pos]["BB"] - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3.1,digits=3)
-                    User_stats[char][key]["D_Stats"][pos]["DICE"] = round(((13*D_stats[pos]["HR"] + 3*(D_stats[pos]["BB"] + D_stats[pos]["HBP"]) - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3,digits=3)
+                if D_stats[pos]["IP"] != 0
+                    D_stats[pos]["WHIP"] = round((D_stats[pos]["BB"] + D_stats[pos]["H"])/D_stats[pos]["IP"],digits=3)
+                    D_stats[pos]["ERA"] = round((D_stats[pos]["ER"]/D_stats[pos]["IP"])*9,digits=3)
+                    D_stats[pos]["K/9"] = round((D_stats[pos]["SO"]/D_stats[pos]["IP"])*9,digits=3)
+                    D_stats[pos]["BB/9"] = round((D_stats[pos]["BB"]/D_stats[pos]["IP"])*9,digits=3)
+                    D_stats[pos]["FIP"] = round(((13*D_stats[pos]["HR"] + 3*D_stats[pos]["BB"] - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3.1,digits=3)
+                    D_stats[pos]["P/IP"] = round(D_stats[pos]["PC"]/D_stats[pos]["IP"],digits=2)
+                    D_stats[pos]["DICE"] = round(((13*D_stats[pos]["HR"] + 3*(D_stats[pos]["BB"] + D_stats[pos]["HBP"]) - 2*D_stats[pos]["SO"])/D_stats[pos]["IP"]) + 3,digits=3)
                 else
-                    User_stats[char][key]["D_Stats"][pos]["WHIP"] = 0
-                    User_stats[char][key]["D_Stats"][pos]["ERA"] = 0
-                    User_stats[char][key]["D_Stats"][pos]["K/9"] = 0
-                    User_stats[char][key]["D_Stats"][pos]["FIP"] = 0
-                    User_stats[char][key]["D_Stats"][pos]["DICE"] = 0
+                    D_stats[pos]["WHIP"] = 0
+                    D_stats[pos]["ERA"] = 0
+                    D_stats[pos]["K/9"] = 0
+                    D_stats[pos]["BB/9"] = 0
+                    D_stats[pos]["FIP"] = 0
+                    D_stats[pos]["P/IP"] = 0
+                    D_stats[pos]["DICE"] = 0
+                end
+                if D_stats[pos]["BB"] !=0
+                    D_stats[pos]["K/BB"] = round((D_stats[pos]["SO"]/D_stats[pos]["BB"])*9,digits=3)
+                else
+                    D_stats[pos]["K/BB"] = 0
                 end
             else
                 OutsPP = D_stats[pos]["OutsPP"]
-                User_stats[char][key]["D_Stats"][pos]["INN"] = div(OutsPP,3) + (OutsPP%3)/10
+                D_stats[pos]["INN"] = div(OutsPP,3) + (OutsPP%3)/10
             end
         end
     end
@@ -1031,6 +1072,6 @@ end
 
 
 
-#get_json("Gobster9",P2="TubbaBlubba")
+#get_json("Gobster9")
 Collect_Stats("JSON_files/Gobster9","Gobster9")
 display("Done")
