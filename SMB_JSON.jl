@@ -317,8 +317,12 @@ function average_like_char(User_stats::AbstractDict)
         end
     end
     for char in names
-        for SuperS in 0:1
-            User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
+        if char in ["Shy Guy","Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad","Total"]
+            continue
+        else
+            for SuperS in 0:1
+                User_stats = Add_self_stats(User_stats,char,SuperS,"Total")
+            end
         end
     end
     return User_stats
@@ -749,6 +753,30 @@ function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::Ab
     #File also at the character level has a "Team" call that hops "GP","W","L" and "Pct"
     old_tip = User_stats["Total"][0]["D_Stats"]["P"]["IP"]
     TIP = (old_tip - round(old_tip))*10 + 3*round(old_tip)
+    User_stats["Total"] = Dict{Int,Dict{AbstractString,Dict{AbstractString,Any}}}()
+    #clears total stats to refill later
+    for SuperS in 0:1
+        User_stats["Total"][SuperS] = Dict{AbstractString,Dict{AbstractString,Any}}()
+        for key in ["O_Stats","D_Stats"]
+            User_stats["Total"][SuperS][key] = Dict{AbstractString,Any}()
+        end
+        for stat in O_stats_name
+            User_stats["Total"][SuperS]["O_Stats"][stat] = 0
+        end
+        User_stats["Total"][SuperS]["D_Stats"]["BigPlays"] = 0
+        for pos in Positions
+            User_stats["Total"][SuperS]["D_Stats"][pos] = Dict{AbstractString,Any}()
+            if pos == "P"
+                for stat in P_stats_name
+                    User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
+                end
+            else
+                for stat in D_stats_name
+                    User_stats["Total"][SuperS]["D_Stats"][pos][stat] = 0
+                end
+            end
+        end
+    end
     for game in readdir(Path)
         if contains(game, "decoded") && contains(game, ".json") && contains(lowercase(game), lowercase(RIO_ID))
             src_path = joinpath(Path,game)
