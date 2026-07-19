@@ -589,7 +589,7 @@ function calc_stats(User_stats::AbstractDict,char::AbstractString)
         if O_stats["AB"] != 0
 
         O_stats["BA"] = round(O_stats["H"]/O_stats["AB"],digits=3)
-        O_stats["SLG"] = round((O_stats["H"] + 2*O_stats["2B"] + 3*O_stats["3B"] + 4*O_stats["HR"])/(O_stats["AB"]),digits=3)
+        O_stats["SLG"] = round((O_stats["H"] + O_stats["2B"] + 2*O_stats["3B"] + 3*O_stats["HR"])/(O_stats["AB"]),digits=3)
         O_stats["ISO"] = round((O_stats["2B"] + 2*O_stats["3B"] + 3*O_stats["HR"])/(O_stats["AB"]),digits=3)
         O_stats["OBP"] = round((O_stats["H"]+O_stats["BB"]+O_stats["HBP"])/(O_stats["AB"]+O_stats["BB"]+O_stats["HBP"]+O_stats["SF"]),digits=3)
         if O_stats["AB"]-O_stats["K"]-O_stats["HR"]+O_stats["SF"] != 0
@@ -861,6 +861,11 @@ function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,
     max = length(Events)
     AB = Dict{AbstractString,Any}()
     Throw = Dict{AbstractString,Any}()
+    if game_dict["Home Player"] == RIO_ID
+        team = "Home"
+    else
+        team = "Away"
+    end
     for i in keys(Events) #run through all events
         # display("Event: $(i-1)")
         # display("Home: $(game_stats["GameLog"]["H_R"])")
@@ -868,7 +873,7 @@ function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,
         if haskey(Events[i],"Pitch") #if a ball was pitched, get its info
             inn = Events[i]["Inning"]
             hinn = Events[i]["Half Inning"]
-            Throw,AB,batter,pitcher = get_throw_data(Events[i],Throw,AB,hinn,game_dict)
+            Throw,AB,batter,pitcher = get_throw_data(Events[i],Throw,AB,hinn,game_dict,team)
             #appends data to the pitchers log
             key = length(Pitcher_Throws[pitcher]) +1
             Pitcher_Throws[pitcher][key] = Throw
@@ -911,7 +916,7 @@ function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,
     return Batter_ABS,Pitcher_Throws,game_stats, IPPG
 end
 
-function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict,hinn::Int,game_dict::AbstractDict)
+function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict,hinn::Int,game_dict::AbstractDict,team::AbstractString)
     if hinn == 0
         batter = Event["Runner Batter"]["Runner Char Id"]
         pitcher = Event["Pitch"]["Pitcher Char Id"]
@@ -919,11 +924,14 @@ function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict
             if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == pitcher
                 Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
                 AB["Pitch Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                break
-            elseif game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
+                Throw["PSS"] = game_dict["Character Game Stats"]["Home Roster $char"]["Superstar"]
+                AB["PSS"] = game_dict["Character Game Stats"]["Home Roster $char"]["Superstar"]
+            end
+            if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == batter
                 AB["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
                 Throw["Bat Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                break
+                Throw["BSS"] = game_dict["Character Game Stats"]["Away Roster $char"]["Superstar"]
+                AB["BSS"] = game_dict["Character Game Stats"]["Away Roster $char"]["Superstar"]
             end
         end
     else
@@ -931,13 +939,16 @@ function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict
         pitcher = Event["Pitch"]["Pitcher Char Id"]
         for char in 0:8
             if game_dict["Character Game Stats"]["Home Roster $char"]["CharID"] == batter
-                Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Fielding Hand"]
-                break
-            elseif game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
-                Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Batting Hand"]
-                break
+                Throw["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Batting Hand"]
+                AB["Bat Hand"] = game_dict["Character Game Stats"]["Home Roster $char"]["Batting Hand"]                
+                Throw["BSS"] = game_dict["Character Game Stats"]["Home Roster $char"]["Superstar"]
+                AB["BSS"] = game_dict["Character Game Stats"]["Home Roster $char"]["Superstar"]
+            end
+            if game_dict["Character Game Stats"]["Away Roster $char"]["CharID"] == pitcher
+                Throw["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Fielding Hand"]
+                AB["Pitch Hand"] = game_dict["Character Game Stats"]["Away Roster $char"]["Fielding Hand"]
+                Throw["PSS"] = game_dict["Character Game Stats"]["Away Roster $char"]["Superstar"]
+                AB["PSS"] = game_dict["Character Game Stats"]["Away Roster $char"]["Superstar"]
             end
         end
     end
@@ -953,6 +964,31 @@ function get_throw_data(Event::AbstractDict,Throw::AbstractDict,AB::AbstractDict
     Throw["Pos"] = Event["Pitch"]["Ball Position - Strikezone"]
     Throw["Swing Type"] = Event["Pitch"]["Type of Swing"]
     Throw["Batter"] = batter
+    Throw["SC"] = Event["Star Chance"]
+    Throw["Outs"] = Event["Outs"]
+    Throw["Inn"] = Event["Inning"]
+    if team == "Home"
+        Throw["Team Score"] = Event["Home Score"]
+        Throw["Opponent Score"] = Event["Away Score"]
+    else
+        Throw["Opponent Score"] = Event["Home Score"]
+        Throw["Team Score"] = Event["Away Score"]
+    end
+    if haskey(Event,"Runner 1B")
+        Throw["1B"] = 1
+    else
+        Throw["1B"] = 0
+    end
+    if haskey(Event,"Runner 2B")
+        Throw["2B"] = 1
+    else
+        Throw["2B"] = 0
+    end
+    if haskey(Event,"Runner 3B")
+        Throw["3B"] = 1
+    else
+        Throw["3B"] = 0
+    end
     return Throw,AB,batter,pitcher
 end
 
@@ -983,52 +1019,29 @@ function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::Abs
     if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
         base_add_data(game_stats,batter,hinn,inn,USER)
         if haskey(Events[i],"Runner 1B")
-            AB["1B"] = 1
             base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
         end
         if haskey(Events[i],"Runner 2B")
-            AB["2B"] = 1
             base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
         end
         if haskey(Events[i],"Runner 3B")
-            AB["3B"] = 1
             base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
         end
     elseif AB["Result"] in ["Single","Double","Triple","HR"]
         if Events[i]["Runner Batter"]["Runner Result Base"] == 4
             base_add_data(game_stats,batter,hinn,inn,USER)
         end
-        if haskey(Events[i],"Runner 1B")
-            AB["1B"] = 1
-            if Events[i]["Runner 1B"]["Runner Result Base"] == 4
-                base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
-            end
+        if haskey(Events[i],"Runner 1B") && Events[i]["Runner 1B"]["Runner Result Base"] == 4
+            base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
         end
-        if haskey(Events[i],"Runner 2B")
-            AB["2B"] = 1
-            if Events[i]["Runner 2B"]["Runner Result Base"] == 4
-                base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
-            end
+        if haskey(Events[i],"Runner 2B") && Events[i]["Runner 2B"]["Runner Result Base"] == 4
+            base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
         end
-        if haskey(Events[i],"Runner 3B")
-            AB["3B"] = 1
-            if Events[i]["Runner 3B"]["Runner Result Base"] == 4
-                base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
-            end
-        end
-    elseif AB["Result"] in ["Walk (HBP)","Walk (BB)"]
-        if haskey(Events[i],"Runner 1B")
-            AB["1B"] = 1
-        end
-        if haskey(Events[i],"Runner 2B")
-            AB["2B"] = 1
-        end
-        if haskey(Events[i],"Runner 3B")
-            AB["3B"] = 1
-        end
-        if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+        if haskey(Events[i],"Runner 3B") && Events[i]["Runner 3B"]["Runner Result Base"] == 4
             base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
         end
+    elseif AB["Result"] in ["Walk (HBP)","Walk (BB)"] && haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+        base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
     elseif i == max
         if hinn == 0 && game_stats["GameLog"]["A_R"] < game_stats["GameLog"]["Away Score"]
             display("MISSING AWAY RUN")
@@ -1050,44 +1063,45 @@ function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::Abs
             game_stats[USER][batter]["O_Stats"]["R"] += 1
         end
         if haskey(Events[i],"Runner 1B") && hinn == 0&& Events[i]["Runner 1B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
-            AB["1B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
             game_stats["GameLog"]["A_R"] += 1
             game_stats[USER][Events[i]["Runner 1B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         elseif haskey(Events[i],"Runner 1B") && hinn == 1 && Events[i]["Runner 1B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
-            AB["1B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
             game_stats["GameLog"]["H_R"] += 1
             game_stats[USER][Events[i]["Runner 1B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         end
         if haskey(Events[i],"Runner 2B") && hinn == 0&& Events[i]["Runner 2B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
-            AB["2B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
             game_stats["GameLog"]["A_R"] += 1
             game_stats[USER][Events[i]["Runner 2B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         elseif haskey(Events[i],"Runner 2B") && hinn == 1 && Events[i]["Runner 2B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
-            AB["2B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
             game_stats["GameLog"]["H_R"] += 1
             game_stats[USER][Events[i]["Runner 2B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         end
         if haskey(Events[i],"Runner 3B") && hinn == 0 && Events[i]["Runner 3B"]["Runner Result Base"] == 4 && Events[i]["Away Score"] < Events[i+1]["Away Score"]
-            AB["3B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
             game_stats["GameLog"]["A_R"] += 1
             game_stats[USER][Events[i]["Runner 3B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         elseif haskey(Events[i],"Runner 3B") && hinn == 1 && Events[i]["Runner 3B"]["Runner Result Base"] == 4 && Events[i]["Home Score"] < Events[i+1]["Home Score"]
-            AB["3B"] = 1
             game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
             game_stats["GameLog"]["H_R"] += 1
             game_stats[USER][Events[i]["Runner 3B"]["Runner Char Id"]]["O_Stats"]["R"] += 1
         end
     end
+    AB["1B"] = Throw["1B"]
+    AB["2B"] = Throw["2B"]
+    AB["3B"] = Throw["3B"]
     AB["RBI"] = Events[i]["RBI"]
     AB["PErg"] = Throw["Erg"]
     AB["Chem Links"] = Throw["Chem Links"]
     AB["Balls"] = Events[i]["Balls"]
     AB["Strikes"] = Events[i]["Strikes"]
+    AB["Team Score"] = Throw["Team Score"] 
+    AB["Opponent Score"] = Throw["Opponent Score"]
+    AB["Outs"] = Throw["Outs"]
+    AB["Inn"] = Throw["Inn"]
     if haskey(Events[i]["Pitch"],"Contact") #Checks to make sure we made contact 
         contact = Events[i]["Pitch"]["Contact"]
         AB["Contact"] = 1
@@ -1106,7 +1120,7 @@ function get_AB_data(Events,Throw::AbstractDict,AB::AbstractDict,game_stats::Abs
         AB["Height"] = contact["Ball Max Height"]
         AB["Quality"] = contact["Contact Quality"]
         AB["CAbs"] = contact["Contact Absolute"]
-        AB["Result"] = contact["Contact Result - Primary"]
+        AB["Hit Result"] = contact["Contact Result - Primary"]
         AB["Charge up"] = contact["Charge Power Up"]
         AB["Charge Down"] = contact["Charge Power Down"]
         AB["SSFS"] = contact["Star Swing Five-Star"]
