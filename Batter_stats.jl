@@ -16,7 +16,7 @@ function json_to_dict(statpath::AbstractString,RIO_ID::AbstractString)
     return game_dict
 end
 
-function Bat_stat_with_spec(Bats::AbstractDict,SS::Int64,Outs=[0,1,2],Balls=[0,1,2,3],Strikes=[0,1,2],Bases=[0,0,0])
+function Bat_stat_with_specs(Bats::AbstractDict,SS::Int64;Outs=[0,1,2],Balls=[0,1,2,3],Strikes=[0,1,2],Bases=[0,0,0])
     #Gets BA,OBP,SLG,OPS,ISO for specific at bat conditons
     AB = 0
     Hits = 0
@@ -58,6 +58,10 @@ function Bat_stat_with_spec(Bats::AbstractDict,SS::Int64,Outs=[0,1,2],Balls=[0,1
             elseif result == "SacFly"
                 SF += 1
                 AB+=1
+            elseif result == "Bunt"
+                continue
+            else
+                AB+=1
             end
         end
     end
@@ -77,10 +81,20 @@ function Bat_stat_with_spec(Bats::AbstractDict,SS::Int64,Outs=[0,1,2],Balls=[0,1
         ISO = 0
         OBP = 0
     end
+    display("AB:$AB")
+    display("Hits:$Hits")
+    display("Singles:$Singles")
+    display("Doubles:$Doubles")
+    display("Triples:$Triples")
+    display("HR:$HR")
+    display("SO:$SO")
+    display("BB:$BB")
+    display("HBP:$HBP")
+    display("SF:$SF")
     OPS = round(OBP + SLG,digits=3)
     return BA,SLG,OBP,OPS,ISO
 end
 
-bat_data = json_to_dict("Stats/Gobster9","Gobster9")
+bat_data = json_to_dict("Stats/TubbaBlubba/","TubbaBlubba")
 
-BA,SLG,OBP,OPS,ISO = Bat_stat_with_spec(bat_data["Luigi"],0)
+BA,SLG,OBP,OPS,ISO = Bat_stat_with_specs(bat_data["Bowser"],0)
