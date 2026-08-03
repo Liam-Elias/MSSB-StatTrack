@@ -2,9 +2,9 @@ using JSON3,JSONTables,DataFrames,Unicode,BenchmarkTools,NativeFileDialog,Dates
 
 const names = ["Shy Guy", "Noki","Pianta","Koopa","Dry Bones","Magikoopa","Paratroopa","Bro","Toad","Total","Mario","Monty","Baby Mario", "Luigi", "Baby Luigi", "Peach", "Daisy","Yoshi","Bowser","DK","Diddy","Dixie","Wario","Waluigi","Birdo","Bowser Jr","King Boo","Boo","Petey","Toadette","Toadsworth","Goomba","Paragoomba","Shy Guy(R)","Shy Guy(B)","Shy Guy(Y)","Shy Guy(G)","Shy Guy(Bk)","Noki(R)","Noki(G)","Noki(B)","Pianta(B)","Pianta(R)","Pianta(Y)","Koopa(R)","Koopa(G)","Dry Bones(Gy)","Dry Bones(R)","Dry Bones(G)","Dry Bones(B)","Magikoopa(R)","Magikoopa(G)","Magikoopa(B)","Magikoopa(Y)","Paratroopa(R)","Paratroopa(G)","Bro(F)","Bro(B)","Bro(H)","Toad(R)","Toad(B)","Toad(Y)","Toad(G)","Toad(P)"]
 
-const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R","SH","GP"]
+const O_stats_name = ["AB","H","HR","RBI","SB","2B","3B","K","BB","HBP","SF","PA","R","SH","GP","CS"]
 
-const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP","IP"]
+const P_stats_name =["ER","R","BF","SO","BB","OutsPP","H","HR","PC","SPC","GP","PO","GS","HBP","IP","DL"]
 
 const D_stats_name = ["PO","OutsPP","BF","GP","INN"]
 
@@ -167,7 +167,7 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
             elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
                 continue
             else 
-                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID,User_stats)
                 User_stats["Team"]["GP"] += 1
                 if game_stats["GameLog"]["Home Player"] == RIO_ID
                     if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
@@ -189,8 +189,8 @@ function get_all_games(Path::AbstractString,RIO_ID::AbstractString)
                 #Appends stats from game_stats to User_stats
                 RIO_stats = game_stats[RIO_ID]
                 for char in keys(RIO_stats)
-                    SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
-                    User_stats = Add_stats(User_stats,RIO_stats,char,SuperS)
+                    #SuperS = pop!(RIO_stats[char]["O_Stats"], "SuperS")
+                    User_stats = Add_stats(User_stats,RIO_stats,char,RIO_stats[char]["O_Stats"]["SuperS"])
                 end
             end
             GameLog = add_game(GameLog,game_stats,game)
@@ -241,7 +241,7 @@ function Add_stats(User_stats::AbstractDict,game_dict::AbstractDict,char::Abstra
 end
 
 function add_game(GameLog::AbstractDict,game_stats::AbstractDict,game::AbstractString)
-    #adds played games to the game log indexed by date and time
+    #adds played games to the game log
     # Date = game_stats["GameLog"]["Date"]
     # Time = game_stats["GameLog"]["Start Time"]
     # key = Date*" "*Time
@@ -414,6 +414,7 @@ function get_offensive_stats(json_dict::AbstractDict,team::AbstractString)
         Stats_dict[ID]["WC"] = json_dict["Character Game Stats"]["$team Roster $i"]["Captain"]
         Stats_dict[ID]["PA"] = Stats_dict[ID]["AB"] + Stats_dict[ID]["BB"] + Stats_dict[ID]["HBP"] + Stats_dict[ID]["SB"]
         Stats_dict[ID]["GP"] = 1
+        Stats_dict[ID]["CS"] = 0
 
         if O_stats["At Bats"] != 0
 
@@ -483,6 +484,7 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
                     Stats_dict[ID][dkey]["PC"] = D_stats["Pitches Thrown"]
                     Stats_dict[ID][dkey]["SPC"] = D_stats["Star Pitches Thrown"]
                     Stats_dict[ID][dkey]["GP"] = 1
+                    Stats_dict[ID][dkey]["DL"] = 0
                     #Checks if and how many out the player got as a pitcher through direct put outs
                     if D_stats["Outs Per Position"] == []
                         Stats_dict[ID][dkey]["PO"] = 0
@@ -792,7 +794,7 @@ function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::Ab
             elseif game_dict["Events"][1]["Inning"] == 1 && game_dict["Events"][1]["Away Score"] != 0 && game_dict["Events"][1]["Home Score"] != 0
                 continue
             else 
-                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID)
+                Batter_ABS,Pitcher_Throws, game_stats,IPPG = get_events_stats(Batter_ABS,Pitcher_Throws,game_stats,game_dict,RIO_ID,User_stats)
                 User_stats["Team"]["GP"] += 1
                 if game_stats["GameLog"]["Home Player"] == RIO_ID
                     if game_stats["GameLog"]["Home Score"] > game_stats["GameLog"]["Away Score"]
@@ -851,7 +853,7 @@ end
 
 
 
-function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_stats::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString)
+function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,game_stats::AbstractDict,game_dict::AbstractDict,RIO_ID::AbstractString,User_stats::AbstractDict)
     #function to get all at bats abd balls pitched by the team
     Events = game_dict["Events"]
     #makes dict's to store data
@@ -883,7 +885,7 @@ function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,
             end
             if Events[i]["Result of AB"] != "None" #since AB's can only result of pitched balls we now check to make sure we swung or not
                 gameID = game_dict["GameID"]
-                AB,game_stats = get_AB_data(Events,AB,game_stats,RIO_ID,Alt_ID,hinn,inn,batter,pitcher,max,i,team,gameID)
+                AB,game_stats = get_AB_data(Events,AB,game_stats,RIO_ID,Alt_ID,hinn,inn,batter,pitcher,max,i,team,gameID,User_stats)
                 #appends data to the batters log
                 if team == "Home" && hinn == 1
                     #gets and appends data to the batters log
@@ -1008,7 +1010,7 @@ function get_throw_data(Event::AbstractDict,Throw::AbstractDict,team::AbstractSt
     return Throw
 end
 
-function get_AB_data(Events,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::AbstractString,Alt_ID::AbstractString,hinn::Int,inn::Int,batter::AbstractString,pitcher::AbstractString,max::Int,i::Int,team::AbstractString,GameID)
+function get_AB_data(Events,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::AbstractString,Alt_ID::AbstractString,hinn::Int,inn::Int,batter::AbstractString,pitcher::AbstractString,max::Int,i::Int,team::AbstractString,GameID,User_stats::AbstractDict)
     AB["Result"] = Events[i]["Result of AB"]
     if haskey(game_stats[RIO_ID],batter)
         USER = RIO_ID
@@ -1031,8 +1033,16 @@ function get_AB_data(Events,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::Ab
             game_stats["GameLog"]["H_R"] += 1
         end 
     end
-
-    if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
+    if i == max
+        get_last_event_stats(game_stats,USER,AB,Events,User_stats,RIO_ID,Alt_ID,batter,pitcher,hinn,inn,max)
+        if hinn == 0 && game_stats["GameLog"]["A_R"] < game_stats["GameLog"]["Away Score"]
+            display("MISSING AWAY RUN")
+        elseif hinn == 1 && game_stats["GameLog"]["H_R"] < game_stats["GameLog"]["Home Score"]
+            display("MISSING HOME RUN")
+        # elseif (Events[i]["Outs"] == 2 && Events[i]["Num Outs During Play"] == 1) || (Events[i]["Outs"] == 1 && Events[i]["Num Outs During Play"] == 2) || (Events[i]["Outs"] == 0 && Events[i]["Num Outs During Play"] == 3)
+        #     display("WHAT?")
+        end
+    elseif AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
         base_add_data(game_stats,batter,hinn,inn,USER)
         if haskey(Events[i],"Runner 1B")
             AB["1B"] = 1
@@ -1084,15 +1094,6 @@ function get_AB_data(Events,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::Ab
             if haskey(Events[i],"Runner 3B")
                 AB["3B"] = 1
             end
-        end
-    elseif i == max
-        if hinn == 0 && game_stats["GameLog"]["A_R"] < game_stats["GameLog"]["Away Score"]
-            display("MISSING AWAY RUN")
-        elseif hinn == 1 && game_stats["GameLog"]["H_R"] < game_stats["GameLog"]["Home Score"]
-            display("MISSING HOME RUN")
-        elseif (Events[i]["Outs"] == 2 && Events[i]["Num Outs During Play"] == 1) || (Events[i]["Outs"] == 1 && Events[i]["Num Outs During Play"] == 2) || (Events[i]["Outs"] == 0 && Events[i]["Num Outs During Play"] == 3)
-        else
-            display(path)
         end
         #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
     else  
@@ -1193,13 +1194,496 @@ function get_AB_data(Events,AB::AbstractDict,game_stats::AbstractDict,RIO_ID::Ab
 end
 
 
+# function get_last_event_stats(game_stats::AbstractDict,USER::AbstractString,AB::AbstractDict,Events,User_stats::AbstractDict,RIO_ID::AbstractString,Alt_ID::AbstractString,batter::AbstractString,pitcher::AbstractString,hinn::Int,inn::Int,i::Int)
+#     function base_add_data(game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString)
+#         game_stats[USER][batter]["O_Stats"]["R"] += 1
+#         if hinn == 0
+#             game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+#             game_stats["GameLog"]["A_R"] += 1
+#         else
+#             game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+#             game_stats["GameLog"]["H_R"] += 1
+#         end 
+#     end
+#     function basic_hit_RIO_ID(Event::AbstractDict,game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString,Alt_ID::AbstractString,AB::AbstractDict,SuperS::Int64)
+#         if Event["Runner Batter"]["Runner Result Base"] == 4
+#             base_add_data(game_stats,batter,hinn,inn,USER)
+#             User_stats[batter][SuperS]["O_Stats"]["RBI"] += 1
+#             game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#         end
+#         if haskey(Event,"Runner 1B") && Event["Runner 1B"]["Runner Result Base"] == 4
+#             AB["1B"] = 1
+#             if Event["Runner 1B"]["Runner Result Base"] == 4
+#                 User_stats[batter][SuperS]["O_Stats"]["RBI"] += 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#         if haskey(Event,"Runner 2B") 
+#             AB["2B"] = 1
+#             if Event["Runner 2B"]["Runner Result Base"] == 4
+#                 User_stats[batter][SuperS]["O_Stats"]["RBI"] += 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#         if haskey(Event,"Runner 3B")
+#             AB["3B"] = 1
+#             if Event["Runner 3B"]["Runner Result Base"] == 4
+#                 User_stats[batter][SuperSB]["O_Stats"]["RBI"] += 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#     end
+#     function basic_hit_Alt_ID(Event::AbstractDict,game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString,Alt_ID::AbstractString,AB::AbstractDict,SuperS::Int64)
+#         if Event["Runner Batter"]["Runner Result Base"] == 4
+#             base_add_data(game_stats,batter,hinn,inn,USER)
+#             game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#             User_stats[pitcher][SuperS]["D_Stats"]["P"]["ER"] += 1
+#             User_stats[pitcher][SuperS]["D_Stats"]["P"]["R"] += 1
+#         end
+#         if haskey(Event,"Runner 1B") && Event["Runner 1B"]["Runner Result Base"] == 4
+#             AB["1B"] = 1
+#             if Event["Runner 1B"]["Runner Result Base"] == 4
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#         if haskey(Event,"Runner 2B") 
+#             AB["2B"] = 1
+#             if Event["Runner 2B"]["Runner Result Base"] == 4
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#         if haskey(Event,"Runner 3B")
+#             AB["3B"] = 1
+#             if Event["Runner 3B"]["Runner Result Base"] == 4
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperS]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Event["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         end
+#     end
+#     game_stats[USER][batter]["O_Stats"]["PA"] += 1
+#     SP = Events[i]["Pitch"]["Star Pitch"]
+#     if USER == RIO_ID
+#         SuperSB = game_stats[USER][batter]["O_Stats"]["SuperS"]
+#         game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["PC"] += 1
+#         game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["SPC"] += SP
+#         if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
+#             base_add_data(game_stats,batter,hinn,inn,USER)
+#             game_stats[USER][batter]["O_Stats"]["HR"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["HR"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["RBI"] += 1
+#             if haskey(Events[i],"Runner 1B")
+#                 AB["1B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 User_stats[batter][SuperSB]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#             if haskey(Events[i],"Runner 2B")
+#                 AB["2B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 User_stats[batter][SuperSB]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#             if haskey(Events[i],"Runner 3B")
+#                 AB["3B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 User_stats[batter][SuperSB]["O_Stats"]["RBI"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         elseif AB["Result"] == "Single"
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             basic_hit_RIO_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSB)
+#         elseif AB["Result"] == "Double"
+#             game_stats[USER][batter]["O_Stats"]["2B"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["2B"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             basic_hit_RIO_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSB)
+#         elseif AB["Result"] == "Triple"
+#             game_stats[USER][batter]["O_Stats"]["3B"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["3B"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             basic_hit_RIO_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSB)
+#         elseif AB["Result"] == "HR"
+#             game_stats[USER][batter]["O_Stats"]["HR"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["HR"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["H"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             basic_hit_RIO_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSB)
 
 
 
 
 
+
+
+#         elseif AB["Result"] == "Walk (HBP)"
+#             if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+#                 AB["1B"] = 1
+#                 AB["2B"] = 1
+#                 AB["3B"] = 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             else
+#                 if haskey(Events[i],"Runner 1B")
+#                     AB["1B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 2B")
+#                     AB["2B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 3B")
+#                     AB["3B"] = 1
+#                 end
+#             end
+#         elseif AB["Result"] == "Walk (BB)"
+#             if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+#                 AB["1B"] = 1
+#                 AB["2B"] = 1
+#                 AB["3B"] = 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             else
+#                 if haskey(Events[i],"Runner 1B")
+#                     AB["1B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 2B")
+#                     AB["2B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 3B")
+#                     AB["3B"] = 1
+#                 end
+#             end
+#         elseif AB["Result"] == "Strikeout"
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["AB"] += 1
+#             game_stats[USER][batter]["O_Stats"]["K"] += 1
+#             User_stats[batter][SuperSB]["O_Stats"]["K"] += 1
+#             game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["SO"] += 1
+#             #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
+#         end
+#     else
+#         SuperSP = game_stats[RIO_ID][pitcher]["O_Stats"]["SuperS"]
+#         game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["PC"] += 1
+#         User_stats[pitcher][SuperSP]["D_Stats"]["P"]["PC"] += 1
+#         game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["SPC"] += SP
+#         User_stats[pitcher][SuperSP]["D_Stats"]["P"]["SPC"] += SP
+#         if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
+#             base_add_data(game_stats,batter,hinn,inn,USER)
+#             game_stats[USER][batter]["O_Stats"]["HR"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["H"] += 1
+#             User_stats[pitcher][SuperSP]["D_Stats"]["P"]["ER"] += 1
+#             User_stats[pitcher][SuperSP]["D_Stats"]["P"]["R"] += 1
+#             User_stats[pitcher][SuperSP]["D_Stats"]["P"]["H"] += 1
+#             if haskey(Events[i],"Runner 1B")
+#                 AB["1B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#             if haskey(Events[i],"Runner 2B")
+#                 AB["2B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#             if haskey(Events[i],"Runner 3B")
+#                 AB["3B"] = 1
+#                 game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+#                 game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["ER"] += 1
+#                 User_stats[pitcher][SuperSP]["D_Stats"]["P"]["R"] += 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             end
+#         elseif AB["Result"] == "Single"
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             basic_hit_Alt_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSP)
+#         elseif AB["Result"] == "Double"
+#             game_stats[USER][batter]["O_Stats"]["2B"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             basic_hit_Alt_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSP)
+#         elseif AB["Result"] == "Triple"
+#             game_stats[USER][batter]["O_Stats"]["3B"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             basic_hit_Alt_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSP)
+#         elseif AB["Result"] == "HR"
+#             game_stats[USER][batter]["O_Stats"]["HR"] += 1
+#             game_stats[USER][batter]["O_Stats"]["H"] += 1
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             basic_hit_Alt_ID(Events[i],game_stats,batter,hinn,inn,USER,Alt_ID,AB,SuperSP)
+
+
+
+
+
+
+
+#         elseif AB["Result"] == "Walk (HBP)"
+#             if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+#                 AB["1B"] = 1
+#                 AB["2B"] = 1
+#                 AB["3B"] = 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             else
+#                 if haskey(Events[i],"Runner 1B")
+#                     AB["1B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 2B")
+#                     AB["2B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 3B")
+#                     AB["3B"] = 1
+#                 end
+#             end
+#         elseif AB["Result"] == "Walk (BB)"
+#             if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+#                 AB["1B"] = 1
+#                 AB["2B"] = 1
+#                 AB["3B"] = 1
+#                 base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+#             else
+#                 if haskey(Events[i],"Runner 1B")
+#                     AB["1B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 2B")
+#                     AB["2B"] = 1
+#                 end
+#                 if haskey(Events[i],"Runner 3B")
+#                     AB["3B"] = 1
+#                 end
+#             end
+#         elseif AB["Result"] == "Strikeout"
+#             game_stats[USER][batter]["O_Stats"]["AB"] += 1
+#             game_stats[USER][batter]["O_Stats"]["K"] += 1
+#             game_stats[RIO_ID][pitcher]["D_Stats"]["P"]["SO"] += 1
+#             User_stats[pitcher][SuperSP]["D_Stats"]["P"]["SO"] += 1
+#             #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
+#         end
+#     end
+# end
+
+
+function get_last_event_stats(game_stats::AbstractDict,USER::AbstractString,AB::AbstractDict,Events,User_stats::AbstractDict,RIO_ID::AbstractString,Alt_ID::AbstractString,batter::AbstractString,pitcher::AbstractString,hinn::Int,inn::Int,i::Int)
+    function base_add_data(game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString)
+        game_stats[USER][batter]["O_Stats"]["R"] += 1
+        if hinn == 0
+            game_stats["GameLog"]["BoxScore"][inn]["A"] += 1
+            game_stats["GameLog"]["A_R"] += 1
+        else
+            game_stats["GameLog"]["BoxScore"][inn]["H"] += 1
+            game_stats["GameLog"]["H_R"] += 1
+        end 
+    end
+    function basic_hit(Event::AbstractDict,game_stats::AbstractDict,batter::AbstractString,hinn::Int,inn::Int,USER::AbstractString,Alt_ID::AbstractString,AB::AbstractDict)
+        if Event["Runner Batter"]["Runner Result Base"] == 4
+            base_add_data(game_stats,batter,hinn,inn,USER)
+            game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+            game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+            game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+        end
+        if haskey(Event,"Runner 1B") && Event["Runner 1B"]["Runner Result Base"] == 4
+            AB["1B"] = 1
+            if Event["Runner 1B"]["Runner Result Base"] == 4
+                game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+                base_add_data(game_stats,Event["Runner 1B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+        if haskey(Event,"Runner 2B") 
+            AB["2B"] = 1
+            if Event["Runner 2B"]["Runner Result Base"] == 4
+                game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+                base_add_data(game_stats,Event["Runner 2B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+        if haskey(Event,"Runner 3B")
+            AB["3B"] = 1
+            if Event["Runner 3B"]["Runner Result Base"] == 4
+                game_stats[USER][batter]["O_Stats"]["RBI"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["ER"] += 1
+                game_stats[Alt_ID][pitcher]["D_Stats"]["P"]["R"] += 1
+                base_add_data(game_stats,Event["Runner 3B"]["Runner Char Id"],hinn,inn,USER)
+            end
+        end
+    end
+    if USER == RIO_ID
+        Batter = RIO_ID
+        Pitcher = Alt_ID
+    else
+        Batter = Alt_ID
+        Pitcher = RIO_ID
+    end
+    game_stats[Batter][batter]["O_Stats"]["PA"] += 1
+    SP = Events[i]["Pitch"]["Star Pitch"]
+    #Appends the game played for the pitcher in a one inning devistating loss
+    if !haskey(game_stats[Pitcher][pitcher]["D_Stats"],"P")
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"] = Dict{AbstractString,Any}()
+        for stat in P_stats_name
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"][stat] = 0
+        end
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["GP"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["DL"] += 1
+    end
+    game_stats[Pitcher][pitcher]["D_Stats"]["P"]["PC"] += 1
+    game_stats[Pitcher][pitcher]["D_Stats"]["P"]["SPC"] += SP
+    if AB["Result"] == "HR" && Events[i]["Runner Batter"]["Runner Result Base"] == 0
+        base_add_data(game_stats,batter,hinn,inn,Batter)
+        game_stats[Batter][batter]["O_Stats"]["HR"] += 1
+        game_stats[Batter][batter]["O_Stats"]["H"] += 1
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        game_stats[Batter][batter]["O_Stats"]["RBI"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["ER"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["R"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["H"] += 1
+        if haskey(Events[i],"Runner 1B")
+            AB["1B"] = 1
+            game_stats[Batter][batter]["O_Stats"]["RBI"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["ER"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["R"] += 1
+            base_add_data(game_stats,Events[i]["Runner 1B"]["Runner Char Id"],hinn,inn,Batter)
+        end
+        if haskey(Events[i],"Runner 2B")
+            AB["2B"] = 1
+            game_stats[Batter][batter]["O_Stats"]["RBI"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["ER"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["R"] += 1
+            base_add_data(game_stats,Events[i]["Runner 2B"]["Runner Char Id"],hinn,inn,Batter)
+        end
+        if haskey(Events[i],"Runner 3B")
+            AB["3B"] = 1
+            game_stats[Batter][batter]["O_Stats"]["RBI"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["ER"] += 1
+            game_stats[Pitcher][pitcher]["D_Stats"]["P"]["R"] += 1
+            base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,Batter)
+        end
+    elseif AB["Result"] == "Single"
+        game_stats[Batter][batter]["O_Stats"]["H"] += 1
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        basic_hit(Events[i],game_stats,batter,hinn,inn,Batter,Pitcher,AB)
+    elseif AB["Result"] == "Double"
+        game_stats[Batter][batter]["O_Stats"]["2B"] += 1
+        game_stats[Batter][batter]["O_Stats"]["H"] += 1
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        basic_hit(Events[i],game_stats,batter,hinn,inn,Batter,Pitcher,AB)
+    elseif AB["Result"] == "Triple"
+        game_stats[Batter][batter]["O_Stats"]["3B"] += 1
+        game_stats[Batter][batter]["O_Stats"]["H"] += 1
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        basic_hit(Events[i],game_stats,batter,hinn,inn,Batter,Pitcher,AB)
+    elseif AB["Result"] == "HR"
+        game_stats[Batter][batter]["O_Stats"]["HR"] += 1
+        game_stats[Batter][batter]["O_Stats"]["H"] += 1
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        basic_hit(Events[i],game_stats,batter,hinn,inn,Batter,Pitcher,AB)
+    elseif AB["Result"] == "Walk (HBP)"
+        if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+            AB["1B"] = 1
+            AB["2B"] = 1
+            AB["3B"] = 1
+            base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,Batter)
+        else
+            if haskey(Events[i],"Runner 1B")
+                AB["1B"] = 1
+            end
+            if haskey(Events[i],"Runner 2B")
+                AB["2B"] = 1
+            end
+            if haskey(Events[i],"Runner 3B")
+                AB["3B"] = 1
+            end
+        end
+    elseif AB["Result"] == "Walk (BB)"
+        if haskey(Events[i],"Runner 1B") && haskey(Events[i],"Runner 2B") && haskey(Events[i],"Runner 3B")
+            AB["1B"] = 1
+            AB["2B"] = 1
+            AB["3B"] = 1
+            base_add_data(game_stats,Events[i]["Runner 3B"]["Runner Char Id"],hinn,inn,Batter)
+        else
+            if haskey(Events[i],"Runner 1B")
+                AB["1B"] = 1
+            end
+            if haskey(Events[i],"Runner 2B")
+                AB["2B"] = 1
+            end
+            if haskey(Events[i],"Runner 3B")
+                AB["3B"] = 1
+            end
+        end
+    elseif AB["Result"] == "Strikeout"
+        game_stats[Batter][batter]["O_Stats"]["AB"] += 1
+        game_stats[Batter][batter]["O_Stats"]["K"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["SO"] += 1
+        #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
+    end
+end
 #get_json("TubbaBlubba")
-Collect_Stats("JSON_files/Dup/","TubbaBlubba")
+
+Collect_Stats("JSON_files/Gobster9/","TubbaBlubba")
 display("Done")
 
 
