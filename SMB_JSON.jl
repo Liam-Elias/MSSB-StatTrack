@@ -356,7 +356,6 @@ function Calc_total_stats(User_stats::AbstractDict,TIP,INN::Int64)
     return User_stats
 end
 
-
 function get_game_stats(json_dict::AbstractDict)
     #Gets all stats for a single game separated by defensive stats and offensive stats for a given game, returns a dict with all characters and their stats
     Game_stats = Dict{AbstractString,Any}()
@@ -538,7 +537,9 @@ function get_defensive_stats(json_dict::AbstractDict,team::AbstractString)
                     else
                         Stats_dict[ID][dkey]["PO"] = 0
                     end
-                    Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
+                    if haskey(D_stats["Batter Outs Per Position"][1],dkey)
+                        Stats_dict[ID][dkey]["OutsPP"] = D_stats["Batter Outs Per Position"][1][dkey]
+                    end
                     Stats_dict[ID][dkey]["BF"] = D_stats["Batters Per Position"][1][dkey]
                     Stats_dict[ID][dkey]["GP"] = 1
                     #Calulates Innings played stat in decimal form, where 1 out = .1 and 2 outs = .2
@@ -780,6 +781,7 @@ function append_games(Path::AbstractString,RIO_ID::AbstractString,User_stats::Ab
         end
     end
     for game in readdir(Path)
+        display(game)
         if contains(game, "decoded") && contains(game, ".json") && contains(lowercase(game), lowercase(RIO_ID))
             src_path = joinpath(Path,game)
             game_dict = JSON3.parsefile(src_path)
@@ -894,6 +896,22 @@ function get_events_stats(Batter_ABS::AbstractDict,Pitcher_Throws::AbstractDict,
                 elseif team == "Away" && hinn == 0
                     key = length(Batter_ABS[batter]) +1
                     Batter_ABS[batter][key] = AB
+                end
+            else
+                Event = Events[i]
+                if haskey(game_stats[RIO_ID],batter)
+                    USER = RIO_ID
+                    else
+                    USER = Alt_ID
+                    end
+                if haskey(Event,"Runner 1B") && Event["Runner 1B"]["Runner Result Base"] == 255
+                    game_stats[USER][Event["Runner 1B"]["Runner Char Id"]]["O_Stats"]["CS"] += 1
+                end
+                if haskey(Event,"Runner 2B") && Event["Runner 2B"]["Runner Result Base"] == 255
+                    game_stats[USER][Event["Runner 2B"]["Runner Char Id"]]["O_Stats"]["CS"] += 1
+                end
+                if haskey(Event,"Runner 3B") && Event["Runner 3B"]["Runner Result Base"] == 255
+                    game_stats[USER][Event["Runner 3B"]["Runner Char Id"]]["O_Stats"]["CS"] += 1
                 end
             end
         end
@@ -1678,12 +1696,19 @@ function get_last_event_stats(game_stats::AbstractDict,USER::AbstractString,AB::
         game_stats[Batter][batter]["O_Stats"]["AB"] += 1
         game_stats[Batter][batter]["O_Stats"]["K"] += 1
         game_stats[Pitcher][pitcher]["D_Stats"]["P"]["SO"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["OutsPP"] += 1
         #Check total runs vs runs found if there is a discrepancy, give a run to the batter and base runner accordingly
+    elseif AB["Result"] == "SacFly"
+        game_stats[Batter][batter]["O_Stats"]["SF"] += 1
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["OutsPP"] += 1
+    else
+        game_stats[Pitcher][pitcher]["D_Stats"]["P"]["OutsPP"] += 1
     end
-end
-#get_json("TubbaBlubba")
 
-Collect_Stats("JSON_files/Gobster9/","TubbaBlubba")
+end
+# get_json("Gobster9")
+
+Collect_Stats("JSON_files/Gobster9/","Gobster9")
 display("Done")
 
 
@@ -1701,4 +1726,4 @@ display("Done")
 #     end
 # end
 
-# get_game_name("JSON_files/TubbaBlubba/",	"2590133783")
+# get_game_name("JSON_files/Gobster9/",	"2528535588")
